@@ -1,6 +1,6 @@
 /* Graphical user interface functions for the Microsoft Windows API.
 
-Copyright (C) 1989, 1992-2013 Free Software Foundation, Inc.
+Copyright (C) 1989, 1992-2014 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -1683,15 +1683,19 @@ x_set_tool_bar_lines (struct frame *f, Lisp_Object value, Lisp_Object oldval)
   /* DELTA is in pixels now.  */
   delta = (nlines - FRAME_TOOL_BAR_LINES (f)) * unit;
 
-  /* Don't resize the tool-bar to more than we have room for.  FIXME:
-     This must use window_sizable eventually !!!!!!!!!!!!  */
+  /* Don't resize the tool-bar to more than we have room for.  Note: The
+     calculations below and the subsequent call to resize_frame_windows
+     are inherently flawed because they can make the toolbar higher than
+     the containing frame.  */
   if (delta > 0)
     {
       root_height = WINDOW_PIXEL_HEIGHT (XWINDOW (FRAME_ROOT_WINDOW (f)));
       if (root_height - delta < unit)
 	{
 	  delta = root_height - unit;
-	  nlines = (root_height / unit) + min (1, (root_height % unit));
+	  /* When creating a new frame and toolbar mode is enabled, we
+	     need at least one toolbar line.  */
+	  nlines = max (FRAME_TOOL_BAR_LINES (f) + delta / unit, 1);
 	}
     }
 
@@ -1912,8 +1916,7 @@ w32_createscrollbar (struct frame *f, struct scroll_bar * bar)
 {
   return CreateWindow ("SCROLLBAR", "", SBS_VERT | WS_CHILD | WS_VISIBLE,
 		       /* Position and size of scroll bar.  */
-		       XINT (bar->left), XINT (bar->top),
-		       XINT (bar->width), XINT (bar->height),
+		       bar->left, bar->top, bar->width, bar->height,
 		       FRAME_W32_WINDOW (f), NULL, hinst, NULL);
 }
 
@@ -4272,6 +4275,12 @@ do_unwind_create_frame (Lisp_Object frame)
 }
 
 static void
+unwind_create_frame_1 (Lisp_Object val)
+{
+  inhibit_lisp_code = val;
+}
+
+static void
 x_default_font_parameter (struct frame *f, Lisp_Object parms)
 {
   struct w32_display_info *dpyinfo = FRAME_DISPLAY_INFO (f);
@@ -4337,6 +4346,10 @@ This function is an internal primitive--use `make-frame' instead.  */)
   Lisp_Object parent;
   struct kboard *kb;
 
+  if (!FRAME_W32_P (SELECTED_FRAME ())
+      && !FRAME_INITIAL_P (SELECTED_FRAME ()))
+    error ("Cannot create a GUI frame in a -nw session");
+
   /* Make copy of frame parameters because the original is in pure
      storage now. */
   parameters = Fcopy_alist (parameters);
@@ -4378,7 +4391,7 @@ This function is an internal primitive--use `make-frame' instead.  */)
   frame = Qnil;
   GCPRO4 (parameters, parent, name, frame);
   tem = x_get_arg (dpyinfo, parameters, Qminibuffer, "minibuffer", "Minibuffer",
-                     RES_TYPE_SYMBOL);
+		   RES_TYPE_SYMBOL);
   if (EQ (tem, Qnone) || NILP (tem))
     f = make_frame_without_minibuffer (Qnil, kb, display);
   else if (EQ (tem, Qonly))
@@ -4408,10 +4421,17 @@ This function is an internal primitive--use `make-frame' instead.  */)
   if (! STRINGP (f->icon_name))
     fset_icon_name (f, Qnil);
 
-/*  FRAME_DISPLAY_INFO (f) = dpyinfo; */
+  /*  FRAME_DISPLAY_INFO (f) = dpyinfo; */
 
   /* With FRAME_DISPLAY_INFO set up, this unwind-protect is safe.  */
   record_unwind_protect (do_unwind_create_frame, frame);
+
+  /* Avoid calling window-configuration-change-hook; otherwise we could
+     get into all kinds of nasty things like an infloop in next_frame or
+     violating a (height >= 0) assertion in window_box_height.  */
+  record_unwind_protect (unwind_create_frame_1, inhibit_lisp_code);
+  inhibit_lisp_code = Qt;
+
 #ifdef GLYPH_DEBUG
   image_cache_refcount =
     FRAME_IMAGE_CACHE (f) ? FRAME_IMAGE_CACHE (f)->refcount : 0;
@@ -4465,7 +4485,7 @@ This function is an internal primitive--use `make-frame' instead.  */)
       Lisp_Object value;
 
       value = x_get_arg (dpyinfo, parameters, Qinternal_border_width,
-                           "internalBorder", "InternalBorder", RES_TYPE_NUMBER);
+			 "internalBorder", "InternalBorder", RES_TYPE_NUMBER);
       if (! EQ (value, Qunbound))
 	parameters = Fcons (Fcons (Qinternal_border_width, value),
                             parameters);
@@ -4505,20 +4525,6 @@ This function is an internal primitive--use `make-frame' instead.  */)
      end up in init_iterator with a null face cache, which should not
      happen.  */
   init_frame_faces (f);
-
-  /* PXW: This is a duplicate from below.  We have to do it here since
-     otherwise x_set_tool_bar_lines will work with the character sizes
-     installed by init_frame_faces while the frame's pixel size is still
-     calculated from a character size of 1 and we subsequently hit the
-     eassert (height >= 0) assertion in window_box_height.  The
-     non-pixelwise code apparently worked around this because it had one
-     frame line vs one toolbar line which left us with a zero root
-     window height which was obviously wrong as well ...  */
-  width = FRAME_TEXT_WIDTH (f);
-  height = FRAME_TEXT_HEIGHT (f);
-  FRAME_TEXT_HEIGHT (f) = 0;
-  SET_FRAME_WIDTH (f, 0);
-  change_frame_size (f, width, height, 1, 0, 0, 1);
 
   /* The X resources controlling the menu-bar and tool-bar are
      processed specially at startup, and reflected in the mode
@@ -6845,12 +6851,15 @@ operations:
                specified DOCUMENT
  \"find\"    - initiate search starting from DOCUMENT which must specify
                a directory
+ \"runas\"   - run DOCUMENT, which must be an excutable file, with
+               elevated privileges (a.k.a. \"as Administrator\").
  nil       - invoke the default OPERATION, or \"open\" if default is
                not defined or unavailable
 
 DOCUMENT is typically the name of a document file or a URL, but can
 also be a program executable to run, or a directory to open in the
-Windows Explorer.
+Windows Explorer.  If it is a file, it must be a local one; this
+function does not support remote file names.
 
 If DOCUMENT is a program executable, the optional third arg PARAMETERS
 can be a string containing command line parameters that will be passed
@@ -6874,22 +6883,19 @@ an integer representing a ShowWindow flag:
 #ifndef CYGWIN
   int use_unicode = w32_unicode_filenames;
   char *doc_a = NULL, *params_a = NULL, *ops_a = NULL;
+  Lisp_Object absdoc;
 #endif
 
   CHECK_STRING (document);
 
 #ifdef CYGWIN
   current_dir = Fcygwin_convert_file_name_to_windows (current_dir, Qt);
-  if (STRINGP (document))
-    document = Fcygwin_convert_file_name_to_windows (document, Qt);
+  document = Fcygwin_convert_file_name_to_windows (document, Qt);
 
   /* Encode filename, current directory and parameters.  */
   current_dir = GUI_ENCODE_FILE (current_dir);
-  if (STRINGP (document))
-    {
-      document = GUI_ENCODE_FILE (document);
-      doc_w = GUI_SDATA (document);
-    }
+  document = GUI_ENCODE_FILE (document);
+  doc_w = GUI_SDATA (document);
   if (STRINGP (parameters))
     {
       parameters = GUI_ENCODE_SYSTEM (parameters);
@@ -6905,20 +6911,26 @@ an integer representing a ShowWindow flag:
 				     (INTEGERP (show_flag)
 				      ? XINT (show_flag) : SW_SHOWDEFAULT));
 #else  /* !CYGWIN */
+  current_dir = ENCODE_FILE (current_dir);
+  /* We have a situation here.  If DOCUMENT is a relative file name,
+     and is not in CURRENT_DIR, ShellExecute below will fail to find
+     it.  So we need to make the file name absolute.  But DOCUMENT
+     does not have to be a file, it can be a URL, for example.  So we
+     make it absolute only if it is an existing file; if it is a file
+     that does not exist, tough.  */
+  absdoc = Fexpand_file_name (document, Qnil);
+  if (!NILP (Ffile_exists_p (absdoc)))
+    document = absdoc;
+  document = ENCODE_FILE (document);
   if (use_unicode)
     {
       wchar_t document_w[MAX_PATH], current_dir_w[MAX_PATH];
 
       /* Encode filename, current directory and parameters, and
 	 convert operation to UTF-16.  */
-      current_dir = ENCODE_FILE (current_dir);
       filename_to_utf16 (SSDATA (current_dir), current_dir_w);
-      if (STRINGP (document))
-	{
-	  document = ENCODE_FILE (document);
-	  filename_to_utf16 (SSDATA (document), document_w);
-	  doc_w = document_w;
-	}
+      filename_to_utf16 (SSDATA (document), document_w);
+      doc_w = document_w;
       if (STRINGP (parameters))
 	{
 	  int len;
@@ -6955,14 +6967,9 @@ an integer representing a ShowWindow flag:
     {
       char document_a[MAX_PATH], current_dir_a[MAX_PATH];
 
-      current_dir = ENCODE_FILE (current_dir);
       filename_to_ansi (SSDATA (current_dir), current_dir_a);
-      if (STRINGP (document))
-	{
-	  ENCODE_FILE (document);
-	  filename_to_ansi (SSDATA (document), document_a);
-	  doc_a = document_a;
-	}
+      filename_to_ansi (SSDATA (document), document_a);
+      doc_a = document_a;
       if (STRINGP (parameters))
 	{
 	  parameters = ENCODE_SYSTEM (parameters);
@@ -8422,7 +8429,12 @@ emacs_abort (void)
 	    int errfile_fd = -1;
 	    int j;
 	    char buf[sizeof ("\r\nException  at this address:\r\n\r\n")
-		     + 2 * INT_BUFSIZE_BOUND (void *)];
+		     /* The type below should really be 'void *', but
+			INT_BUFSIZE_BOUND cannot handle that without
+			triggering compiler warnings (under certain
+			pedantic warning switches), it wants an
+			integer type.  */
+		     + 2 * INT_BUFSIZE_BOUND (intptr_t)];
 #ifdef CYGWIN
 	    int stderr_fd = 2;
 #else

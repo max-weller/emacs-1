@@ -1,7 +1,7 @@
 ;;; emacsbug.el --- command to report Emacs bugs to appropriate mailing list
 
-;; Copyright (C) 1985, 1994, 1997-1998, 2000-2013
-;;   Free Software Foundation, Inc.
+;; Copyright (C) 1985, 1994, 1997-1998, 2000-2014 Free Software
+;; Foundation, Inc.
 
 ;; Author: K. Shane Hartman
 ;; Maintainer: FSF
@@ -260,8 +260,11 @@ usually do not have translators for other languages.\n\n")))
        "LC_ALL" "LC_COLLATE" "LC_CTYPE" "LC_MESSAGES"
        "LC_MONETARY" "LC_NUMERIC" "LC_TIME" "LANG" "XMODIFIERS"))
     (insert (format "  locale-coding-system: %s\n" locale-coding-system))
-    (insert (format "  default enable-multibyte-characters: %s\n"
-		    (default-value 'enable-multibyte-characters)))
+    ;; Only ~ 0.2% of people from a sample of 3200 changed this from
+    ;; the default, t.
+    (or (default-value 'enable-multibyte-characters)
+	(insert (format "  default enable-multibyte-characters: %s\n"
+			(default-value 'enable-multibyte-characters))))
     (insert "\n")
     (insert (format "Major mode: %s\n"
 		    (format-mode-line

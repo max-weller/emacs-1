@@ -1,7 +1,7 @@
 ;;; -*- lexical-binding: t -*-
 ;;; ielm.el --- interaction mode for Emacs Lisp
 
-;; Copyright (C) 1994, 2001-2013 Free Software Foundation, Inc.
+;; Copyright (C) 1994, 2001-2014 Free Software Foundation, Inc.
 
 ;; Author: David Smith <maa036@lancaster.ac.uk>
 ;; Maintainer: FSF
@@ -458,7 +458,9 @@ nonempty, then flushes the buffer."
             ;; Self-referential objects cause loops in the printer, so
             ;; trap quits here. May as well do errors, too
             (unless for-effect
-              (setq output (concat output (pp-to-string result))))
+              (setq output (concat output (pp-to-string result)
+				   (let ((str (eval-expression-print-format result)))
+				     (if str (propertize str 'font-lock-face 'shadow))))))
           (error (setq error-type "IELM Error")
                  (setq result "Error during pretty-printing (bug in pp)"))
           (quit  (setq error-type "IELM Error")

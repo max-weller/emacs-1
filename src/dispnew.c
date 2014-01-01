@@ -1,6 +1,6 @@
 /* Updating of data structures for redisplay.
 
-Copyright (C) 1985-1988, 1993-1995, 1997-2013 Free Software Foundation,
+Copyright (C) 1985-1988, 1993-1995, 1997-2014 Free Software Foundation,
 Inc.
 
 This file is part of GNU Emacs.
@@ -5463,8 +5463,7 @@ change_frame_size_1 (struct frame *f, int new_width, int new_height,
 		     bool pretend, bool delay, bool safe, bool pixelwise)
 {
   int new_text_width, new_text_height, new_root_width;
-  int old_root_width = (FRAME_PIXEL_WIDTH (f)
-			- 2 * FRAME_INTERNAL_BORDER_WIDTH (f));
+  int old_root_width = WINDOW_PIXEL_WIDTH (XWINDOW (FRAME_ROOT_WINDOW (f)));
   int new_cols, new_lines;
   ptrdiff_t count = SPECPDL_INDEX ();
 
@@ -5488,6 +5487,8 @@ change_frame_size_1 (struct frame *f, int new_width, int new_height,
     {
       new_text_width = (new_width == 0) ? FRAME_TEXT_WIDTH (f) : new_width;
       new_text_height = (new_height == 0) ? FRAME_TEXT_HEIGHT (f) : new_height;
+      /* Consider rounding here: Currently, the root window can be
+	 larger than the frame in terms of columns/lines.  */
       new_cols = new_text_width / FRAME_COLUMN_WIDTH (f);
       new_lines = new_text_height / FRAME_LINE_HEIGHT (f);
     }
@@ -5507,7 +5508,6 @@ change_frame_size_1 (struct frame *f, int new_width, int new_height,
      fringe columns.  Do this after rounding - see discussion of
      bug#9723.  */
   new_root_width = (new_text_width
-		    /* PXM: Use the configured scrollbar width !??  */
 		    + FRAME_SCROLL_BAR_AREA_WIDTH (f)
 		    + FRAME_TOTAL_FRINGE_WIDTH (f));
   /* If we're not changing the frame size, quit now.  */

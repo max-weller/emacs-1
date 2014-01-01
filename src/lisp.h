@@ -1,6 +1,7 @@
 /* Fundamental definitions for GNU Emacs Lisp interpreter.
 
-Copyright (C) 1985-1987, 1993-1995, 1997-2013 Free Software Foundation, Inc.
+Copyright (C) 1985-1987, 1993-1995, 1997-2014 Free Software Foundation,
+Inc.
 
 This file is part of GNU Emacs.
 
@@ -62,7 +63,7 @@ INLINE_HEADER_BEGIN
    pI - printf length modifier for EMACS_INT
    EMACS_UINT - unsigned variant of EMACS_INT */
 #ifndef EMACS_INT_MAX
-# if LONG_MAX < LLONG_MAX && defined WIDE_EMACS_INT
+# if LONG_MAX < LLONG_MAX && (defined(WIDE_EMACS_INT) || defined(_WIN64))
 typedef long long int EMACS_INT;
 typedef unsigned long long int EMACS_UINT;
 #  define EMACS_INT_MAX LLONG_MAX
@@ -3037,6 +3038,7 @@ struct gcpro
 #define GCPRO6(varname1, varname2, varname3, varname4, varname5, varname6) \
   ((void) gcpro6, (void) gcpro5, (void) gcpro4, (void) gcpro3, (void) gcpro2, \
    (void) gcpro1)
+#define GCPRO7(a, b, c, d, e, f, g) (GCPRO6 (a, b, c, d, e, f), (void) gcpro7)
 #define UNGCPRO ((void) 0)
 
 #else /* GC_MARK_STACK != GC_MAKE_GCPROS_NOOPS */
@@ -3081,6 +3083,16 @@ struct gcpro
   gcpro5.next = &gcpro4; gcpro5.var = &varname5; gcpro5.nvars = 1; \
   gcpro6.next = &gcpro5; gcpro6.var = &varname6; gcpro6.nvars = 1; \
   gcprolist = &gcpro6; }
+
+#define GCPRO7(a, b, c, d, e, f, g)				\
+ {gcpro1.next = gcprolist; gcpro1.var = &(a); gcpro1.nvars = 1;	\
+  gcpro2.next = &gcpro1; gcpro2.var = &(b); gcpro2.nvars = 1;	\
+  gcpro3.next = &gcpro2; gcpro3.var = &(c); gcpro3.nvars = 1;	\
+  gcpro4.next = &gcpro3; gcpro4.var = &(d); gcpro4.nvars = 1;	\
+  gcpro5.next = &gcpro4; gcpro5.var = &(e); gcpro5.nvars = 1;	\
+  gcpro6.next = &gcpro5; gcpro6.var = &(f); gcpro6.nvars = 1;	\
+  gcpro7.next = &gcpro6; gcpro7.var = &(g); gcpro7.nvars = 1;	\
+  gcprolist = &gcpro7; }
 
 #define UNGCPRO (gcprolist = gcpro1.next)
 
@@ -3137,6 +3149,18 @@ extern int gcpro_level;
   gcpro6.next = &gcpro5; gcpro6.var = &varname6; gcpro6.nvars = 1; \
   gcpro6.level = gcpro_level++; \
   gcprolist = &gcpro6; }
+
+#define GCPRO7(a, b, c, d, e, f, g)					\
+ {gcpro1.next = gcprolist; gcpro1.var = &(a); gcpro1.nvars = 1;		\
+  gcpro1.level = gcpro_level;						\
+  gcpro2.next = &gcpro1; gcpro2.var = &(b); gcpro2.nvars = 1;		\
+  gcpro3.next = &gcpro2; gcpro3.var = &(c); gcpro3.nvars = 1;		\
+  gcpro4.next = &gcpro3; gcpro4.var = &(d); gcpro4.nvars = 1;		\
+  gcpro5.next = &gcpro4; gcpro5.var = &(e); gcpro5.nvars = 1;		\
+  gcpro6.next = &gcpro5; gcpro6.var = &(f); gcpro6.nvars = 1;		\
+  gcpro7.next = &gcpro6; gcpro7.var = &(g); gcpro7.nvars = 1;		\
+  gcpro7.level = gcpro_level++;						\
+  gcprolist = &gcpro7; }
 
 #define UNGCPRO					\
   (--gcpro_level != gcpro1.level		\
@@ -3796,7 +3820,7 @@ LOADHIST_ATTACH (Lisp_Object x)
     Vcurrent_load_list = Fcons (x, Vcurrent_load_list);
 }
 extern int openp (Lisp_Object, Lisp_Object, Lisp_Object,
-                  Lisp_Object *, Lisp_Object);
+                  Lisp_Object *, Lisp_Object, bool);
 extern Lisp_Object string_to_number (char const *, int, bool);
 extern void map_obarray (Lisp_Object, void (*) (Lisp_Object, Lisp_Object),
                          Lisp_Object);

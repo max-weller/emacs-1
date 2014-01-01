@@ -1,6 +1,7 @@
 /* Display generation from window structure and buffer text.
 
-Copyright (C) 1985-1988, 1993-1995, 1997-2013 Free Software Foundation, Inc.
+Copyright (C) 1985-1988, 1993-1995, 1997-2014 Free Software Foundation,
+Inc.
 
 This file is part of GNU Emacs.
 
@@ -12057,8 +12058,8 @@ display_tool_bar_line (struct it *it, int height)
 #define MAX_FRAME_TOOL_BAR_HEIGHT(f) \
   ((FRAME_LINE_HEIGHT (f) * FRAME_LINES (f)))
 
-/* Value is the number of screen lines needed to make all tool-bar
-   items of frame F visible.  The number of actual rows needed is
+/* Value is the number of pixels needed to make all tool-bar items of
+   frame F visible.  The actual number of glyph rows needed is
    returned in *N_ROWS if non-NULL.  */
 
 static int
@@ -12075,8 +12076,7 @@ tool_bar_height (struct frame *f, int *n_rows, bool pixelwise)
      F->desired_tool_bar_string in the tool-bar window of frame F.  */
   init_iterator (&it, w, -1, -1, temp_row, TOOL_BAR_FACE_ID);
   it.first_visible_x = 0;
-  /* PXW: Use FRAME_PIXEL_WIDTH (f) here?  */
-  it.last_visible_x = FRAME_TOTAL_COLS (f) * FRAME_COLUMN_WIDTH (f);
+  it.last_visible_x = WINDOW_PIXEL_WIDTH (w);
   reseat_to_string (&it, NULL, f->desired_tool_bar_string, 0, 0, 0, -1);
   it.paragraph_embedding = L2R;
 
@@ -12254,6 +12254,10 @@ redisplay_tool_bar (struct frame *f)
 	  && it.current_y < max_tool_bar_height)
 	change_height_p = 1;
 
+      /* We subtract 1 because display_tool_bar_line advances the
+	 glyph_row pointer before returning to its caller.  We want to
+	 examine the last glyph row produced by
+	 display_tool_bar_line.  */
       row = it.glyph_row - 1;
 
       /* If there are blank lines at the end, except for a partially
@@ -12286,18 +12290,35 @@ redisplay_tool_bar (struct frame *f)
 
 	  if (change_height_p)
 	    {
+	      /* Current size of the tool-bar window in canonical line
+		 units.  */
+	      int old_lines = WINDOW_TOTAL_LINES (w);
+	      /* Required size of the tool-bar window in canonical
+		 line units. */
 	      int new_lines = ((new_height + FRAME_LINE_HEIGHT (f) - 1)
 			       / FRAME_LINE_HEIGHT (f));
+	      /* Maximum size of the tool-bar window in canonical line
+		 units that this frame can allow. */
+	      int max_lines =
+		WINDOW_TOTAL_LINES (XWINDOW (FRAME_ROOT_WINDOW (f))) - 1;
 
-	      XSETFRAME (frame, f);
-	      Fmodify_frame_parameters (frame,
-					list1 (Fcons (Qtool_bar_lines,
-						      make_number (new_lines))));
-	      /* Always do that now.  */
-	      clear_glyph_matrix (w->desired_matrix);
-	      f->n_tool_bar_rows = nrows;
-	      f->fonts_changed = 1;
-	      return 1;
+	      /* Don't try to change the tool-bar window size and set
+		 the fonts_changed flag unless really necessary.  That
+		 flag causes redisplay to give up and retry
+		 redisplaying the frame from scratch, so setting it
+		 unnecessarily can lead to nasty redisplay loops.  */
+	      if (new_lines <= max_lines
+		  && eabs (new_lines - old_lines) >= 1)
+		{
+		  XSETFRAME (frame, f);
+		  Fmodify_frame_parameters (frame,
+					    list1 (Fcons (Qtool_bar_lines,
+							  make_number (new_lines))));
+		  clear_glyph_matrix (w->desired_matrix);
+		  f->n_tool_bar_rows = nrows;
+		  f->fonts_changed = 1;
+		  return 1;
+		}
 	    }
 	}
     }
@@ -12607,15 +12628,25 @@ hscroll_window_tree (Lisp_Object window)
 	{
 	  int h_margin;
 	  int text_area_width;
-	  struct glyph_row *current_cursor_row
-	    = MATRIX_ROW (w->current_matrix, w->cursor.vpos);
-	  struct glyph_row *desired_cursor_row
-	    = MATRIX_ROW (w->desired_matrix, w->cursor.vpos);
-	  struct glyph_row *cursor_row
-	    = (desired_cursor_row->enabled_p
-	       ? desired_cursor_row
-	       : current_cursor_row);
-	  int row_r2l_p = cursor_row->reversed_p;
+	  struct glyph_row *cursor_row;
+	  struct glyph_row *bottom_row;
+	  int row_r2l_p;
+
+	  bottom_row = MATRIX_BOTTOM_TEXT_ROW (w->desired_matrix, w);
+	  if (w->cursor.vpos < bottom_row - w->desired_matrix->rows)
+	    cursor_row = MATRIX_ROW (w->desired_matrix, w->cursor.vpos);
+	  else
+	    cursor_row = bottom_row - 1;
+
+	  if (!cursor_row->enabled_p)
+	    {
+	      bottom_row = MATRIX_BOTTOM_TEXT_ROW (w->current_matrix, w);
+	      if (w->cursor.vpos < bottom_row - w->current_matrix->rows)
+		cursor_row = MATRIX_ROW (w->current_matrix, w->cursor.vpos);
+	      else
+		cursor_row = bottom_row - 1;
+	    }
+	  row_r2l_p = cursor_row->reversed_p;
 
 	  text_area_width = window_box_width (w, TEXT_AREA);
 
@@ -18863,19 +18894,31 @@ extend_face_to_end_of_line (struct it *it)
 	  it->glyph_row->glyphs[TEXT_AREA][0].face_id = face->id;
 	  it->glyph_row->used[TEXT_AREA] = 1;
 	}
-      if (WINDOW_LEFT_MARGIN_WIDTH (it->w) > 0
-	  && it->glyph_row->used[LEFT_MARGIN_AREA] == 0)
+      /* Mode line and the header line don't have margins, and
+	 likewise the frame's tool-bar window, if there is any.  */
+      if (!(it->glyph_row->mode_line_p
+#if defined (HAVE_WINDOW_SYSTEM) && ! defined (USE_GTK) && ! defined (HAVE_NS)
+	    || (WINDOWP (f->tool_bar_window)
+		&& it->w == XWINDOW (f->tool_bar_window))
+#endif
+	    ))
 	{
-	  it->glyph_row->glyphs[LEFT_MARGIN_AREA][0] = space_glyph;
-	  it->glyph_row->glyphs[LEFT_MARGIN_AREA][0].face_id = face->id;
-	  it->glyph_row->used[LEFT_MARGIN_AREA] = 1;
-	}
-      if (WINDOW_RIGHT_MARGIN_WIDTH (it->w) > 0
-	  && it->glyph_row->used[RIGHT_MARGIN_AREA] == 0)
-	{
-	  it->glyph_row->glyphs[RIGHT_MARGIN_AREA][0] = space_glyph;
-	  it->glyph_row->glyphs[RIGHT_MARGIN_AREA][0].face_id = face->id;
-	  it->glyph_row->used[RIGHT_MARGIN_AREA] = 1;
+	  if (WINDOW_LEFT_MARGIN_WIDTH (it->w) > 0
+	      && it->glyph_row->used[LEFT_MARGIN_AREA] == 0)
+	    {
+	      it->glyph_row->glyphs[LEFT_MARGIN_AREA][0] = space_glyph;
+	      it->glyph_row->glyphs[LEFT_MARGIN_AREA][0].face_id =
+		default_face->id;
+	      it->glyph_row->used[LEFT_MARGIN_AREA] = 1;
+	    }
+	  if (WINDOW_RIGHT_MARGIN_WIDTH (it->w) > 0
+	      && it->glyph_row->used[RIGHT_MARGIN_AREA] == 0)
+	    {
+	      it->glyph_row->glyphs[RIGHT_MARGIN_AREA][0] = space_glyph;
+	      it->glyph_row->glyphs[RIGHT_MARGIN_AREA][0].face_id =
+		default_face->id;
+	      it->glyph_row->used[RIGHT_MARGIN_AREA] = 1;
+	    }
 	}
 #ifdef HAVE_WINDOW_SYSTEM
       if (it->glyph_row->reversed_p)
@@ -18942,20 +18985,12 @@ extend_face_to_end_of_line (struct it *it)
       it->object = make_number (0);
       it->c = it->char_to_display = ' ';
       it->len = 1;
-      /* The last row's blank glyphs should get the default face, to
-	 avoid painting the rest of the window with the region face,
-	 if the region ends at ZV.  */
-      if (it->glyph_row->ends_at_zv_p)
-	it->face_id = default_face->id;
-      else
-	it->face_id = face->id;
 
-      face = FACE_FROM_ID (f, it->face_id);
       if (WINDOW_LEFT_MARGIN_WIDTH (it->w) > 0
 	  && (it->glyph_row->used[LEFT_MARGIN_AREA]
 	      < WINDOW_LEFT_MARGIN_WIDTH (it->w))
 	  && !it->glyph_row->mode_line_p
-	  && face && face->background != FRAME_BACKGROUND_PIXEL (f))
+	  && default_face->background != FRAME_BACKGROUND_PIXEL (f))
 	{
 	  struct glyph *g = it->glyph_row->glyphs[LEFT_MARGIN_AREA];
 	  struct glyph *e = g + it->glyph_row->used[LEFT_MARGIN_AREA];
@@ -18964,6 +18999,7 @@ extend_face_to_end_of_line (struct it *it)
 	    it->current_x += g->pixel_width;
 
 	  it->area = LEFT_MARGIN_AREA;
+	  it->face_id = default_face->id;
 	  while (it->glyph_row->used[LEFT_MARGIN_AREA]
 		 < WINDOW_LEFT_MARGIN_WIDTH (it->w))
 	    {
@@ -18977,6 +19013,13 @@ extend_face_to_end_of_line (struct it *it)
 	  it->area = TEXT_AREA;
 	}
 
+      /* The last row's blank glyphs should get the default face, to
+	 avoid painting the rest of the window with the region face,
+	 if the region ends at ZV.  */
+      if (it->glyph_row->ends_at_zv_p)
+	it->face_id = default_face->id;
+      else
+	it->face_id = face->id;
       PRODUCE_GLYPHS (it);
 
       while (it->current_x <= it->last_visible_x)
@@ -18986,7 +19029,7 @@ extend_face_to_end_of_line (struct it *it)
 	  && (it->glyph_row->used[RIGHT_MARGIN_AREA]
 	      < WINDOW_RIGHT_MARGIN_WIDTH (it->w))
 	  && !it->glyph_row->mode_line_p
-	  && face && face->background != FRAME_BACKGROUND_PIXEL (f))
+	  && default_face->background != FRAME_BACKGROUND_PIXEL (f))
 	{
 	  struct glyph *g = it->glyph_row->glyphs[RIGHT_MARGIN_AREA];
 	  struct glyph *e = g + it->glyph_row->used[RIGHT_MARGIN_AREA];
@@ -18995,6 +19038,7 @@ extend_face_to_end_of_line (struct it *it)
 	    it->current_x += g->pixel_width;
 
 	  it->area = RIGHT_MARGIN_AREA;
+	  it->face_id = default_face->id;
 	  while (it->glyph_row->used[RIGHT_MARGIN_AREA]
 		 < WINDOW_RIGHT_MARGIN_WIDTH (it->w))
 	    {
@@ -20582,23 +20626,37 @@ Value is the new character position of point.  */)
       SET_TEXT_POS (pt, PT, PT_BYTE);
       start_display (&it, w, pt);
 
-      if ((it.cmp_it.id < 0
-	   && it.method == GET_FROM_STRING
-	   && it.area == TEXT_AREA
-	   && it.string_from_display_prop_p
-	   && (it.sp > 0 && it.stack[it.sp - 1].method == GET_FROM_BUFFER))
-	  || it.method == GET_FROM_DISPLAY_VECTOR)
+      if (it.cmp_it.id < 0
+	  && it.method == GET_FROM_STRING
+	  && it.area == TEXT_AREA
+	  && it.string_from_display_prop_p
+	  && (it.sp > 0 && it.stack[it.sp - 1].method == GET_FROM_BUFFER))
 	overshoot_expected = true;
 
       /* Find the X coordinate of point.  We start from the beginning
 	 of this or previous line to make sure we are before point in
 	 the logical order (since the move_it_* functions can only
 	 move forward).  */
+    reseat:
       reseat_at_previous_visible_line_start (&it);
       it.current_x = it.hpos = it.current_y = it.vpos = 0;
       if (IT_CHARPOS (it) != PT)
-	move_it_to (&it, overshoot_expected ? PT - 1 : PT,
-		    -1, -1, -1, MOVE_TO_POS);
+	{
+	  move_it_to (&it, overshoot_expected ? PT - 1 : PT,
+		      -1, -1, -1, MOVE_TO_POS);
+	  /* If we missed point because the character there is
+	     displayed out of a display vector that has more than one
+	     glyph, retry expecting overshoot.  */
+	  if (it.method == GET_FROM_DISPLAY_VECTOR
+	      && it.current.dpvec_index > 0
+	      && !overshoot_expected)
+	    {
+	      overshoot_expected = true;
+	      goto reseat;
+	    }
+	  else if (IT_CHARPOS (it) != PT && !overshoot_expected)
+	    move_it_in_display_line (&it, PT, -1, MOVE_TO_POS);
+	}
       pt_x = it.current_x;
       pt_vpos = it.vpos;
       if (dir > 0 || overshoot_expected)
@@ -20627,9 +20685,9 @@ Value is the new character position of point.  */)
       else if (pixel_width <= 0)
 	pixel_width = 1;
 
-      /* If there's a display string at point, we are actually at the
-	 glyph to the left of point, so we need to correct the X
-	 coordinate.  */
+      /* If there's a display string (or something similar) at point,
+	 we are actually at the glyph to the left of point, so we need
+	 to correct the X coordinate.  */
       if (overshoot_expected)
 	{
 	  if (it.bidi_p)
@@ -20692,15 +20750,37 @@ Value is the new character position of point.  */)
 	 character at point.  */
       if (FRAME_WINDOW_P (it.f) && dir < 0)
 	{
-	  struct text_pos new_pos = it.current.pos;
+	  struct text_pos new_pos;
 	  enum move_it_result rc = MOVE_X_REACHED;
+
+	  if (it.current_x == 0)
+	    get_next_display_element (&it);
+	  if (it.what == IT_COMPOSITION)
+	    {
+	      new_pos.charpos = it.cmp_it.charpos;
+	      new_pos.bytepos = -1;
+	    }
+	  else
+	    new_pos = it.current.pos;
 
 	  while (it.current_x + it.pixel_width <= target_x
 		 && rc == MOVE_X_REACHED)
 	    {
 	      int new_x = it.current_x + it.pixel_width;
 
-	      new_pos = it.current.pos;
+	      /* For composed characters, we want the position of the
+		 first character in the grapheme cluster (usually, the
+		 composition's base character), whereas it.current
+		 might give us the position of the _last_ one, e.g. if
+		 the composition is rendered in reverse due to bidi
+		 reordering.  */
+	      if (it.what == IT_COMPOSITION)
+		{
+		  new_pos.charpos = it.cmp_it.charpos;
+		  new_pos.bytepos = -1;
+		}
+	      else
+		new_pos = it.current.pos;
 	      if (new_x == it.current_x)
 		new_x++;
 	      rc = move_it_in_display_line_to (&it, ZV, new_x,
@@ -20708,21 +20788,10 @@ Value is the new character position of point.  */)
 	      if (ITERATOR_AT_END_OF_LINE_P (&it) && !target_is_eol_p)
 		break;
 	    }
-	  /* If we ended up on a composed character inside
-	     bidi-reordered text (e.g., Hebrew text with diacritics),
-	     the iterator gives us the buffer position of the last (in
-	     logical order) character of the composed grapheme cluster,
-	     which is not what we want.  So we cheat: we compute the
-	     character position of the character that follows (in the
-	     logical order) the one where the above loop stopped.  That
-	     character will appear on display to the left of point.  */
-	  if (it.bidi_p
-	      && it.bidi_it.scan_dir == -1
-	      && new_pos.charpos - IT_CHARPOS (it) > 1)
-	    {
-	      new_pos.charpos = IT_CHARPOS (it) + 1;
-	      new_pos.bytepos = CHAR_TO_BYTE (new_pos.charpos);
-	    }
+	  /* The previous position we saw in the loop is the one we
+	     want.  */
+	  if (new_pos.bytepos == -1)
+	    new_pos.bytepos = CHAR_TO_BYTE (new_pos.charpos);
 	  it.current.pos = new_pos;
 	}
       else
@@ -20814,8 +20883,7 @@ display_menu_bar (struct window *w)
   eassert (!FRAME_WINDOW_P (f));
   init_iterator (&it, w, -1, -1, f->desired_matrix->rows, MENU_FACE_ID);
   it.first_visible_x = 0;
-  /* PXW: Use FRAME_PIXEL_WIDTH (f) here?  */
-  it.last_visible_x = FRAME_TOTAL_COLS (f) * FRAME_COLUMN_WIDTH (f);
+  it.last_visible_x = FRAME_PIXEL_WIDTH (f);
 #elif defined (HAVE_X_WINDOWS) /* X without toolkit.  */
   if (FRAME_WINDOW_P (f))
     {
@@ -20826,8 +20894,7 @@ display_menu_bar (struct window *w)
       init_iterator (&it, menu_w, -1, -1, menu_w->desired_matrix->rows,
 		     MENU_FACE_ID);
       it.first_visible_x = 0;
-      /* PXW: Use FRAME_PIXEL_WIDTH (f) here?  */
-      it.last_visible_x = FRAME_TOTAL_COLS (f) * FRAME_COLUMN_WIDTH (f);
+      it.last_visible_x = FRAME_PIXEL_WIDTH (f);
     }
   else
 #endif /* not USE_X_TOOLKIT and not USE_GTK */

@@ -1,3 +1,21 @@
+2013-12-23  Teodor Zlatanov  <tzz@lifelogs.com>
+
+	* emacs-gnutls.texi (Help For Users): Document `gnutls-verify-error'.
+
+2013-12-22  Glenn Morris  <rgm@gnu.org>
+
+	* woman.texi (Navigation): Use itemx where appropriate.
+
+2013-12-20  Tassilo Horn  <tsdh@gnu.org>
+
+	* info.texi, woman.texi:
+	Document `S-SPC' as alternative to `DEL' for scrolling.
+
+2013-12-20  Jay Belanger  <jay.p.belanger@gmail.com>
+
+	* calc.texi (Stack Manipulation Commands): Mention using the variable
+	`calc-context-sensitive-enter' for `calc-enter' and `calc-pop'.
+
 2013-12-12  Michael Albinus  <michael.albinus@gmx.de>
 
 	* tramp.texi (direntry): Use ssh but rsh.
@@ -441,7 +459,7 @@
 
 2013-11-12  Kodi Arfer  <git@arfer.net>  (tiny change)
 
-	* org.text (CSS support): Mention .figure-number, .listing-number,
+	* org.texi (CSS support): Mention .figure-number, .listing-number,
 	and .table-number.
 
 2013-11-12  Michael Brand  <michael.ch.brand@gmail.com>
@@ -11140,7 +11158,7 @@
 ;; coding: utf-8
 ;; End:
 
-  Copyright (C) 1993-1999, 2001-2013 Free Software Foundation, Inc.
+  Copyright (C) 1993-1999, 2001-2014 Free Software Foundation, Inc.
 
   This file is part of GNU Emacs.
 

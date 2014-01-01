@@ -1,6 +1,6 @@
 ;;; gnutls.el --- Support SSL/TLS connections through GnuTLS
 
-;; Copyright (C) 2010-2013 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2014 Free Software Foundation, Inc.
 
 ;; Author: Ted Zlatanov <tzz@lifelogs.com>
 ;; Keywords: comm, tls, ssl, encryption
@@ -54,6 +54,7 @@ set this variable to \"normal:-dhe-rsa\"."
 (defcustom gnutls-verify-error nil
   "If non-nil, this should be a list of checks per hostname regex or t."
   :group 'gnutls
+  :version "24.4"
   :type '(choice
           (const t)
           (repeat :tag "List of hostname regexps with flags for each"

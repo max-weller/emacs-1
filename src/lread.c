@@ -1,6 +1,7 @@
 /* Lisp parsing and input streams.
 
-Copyright (C) 1985-1989, 1993-1995, 1997-2013 Free Software Foundation, Inc.
+Copyright (C) 1985-1989, 1993-1995, 1997-2014 Free Software Foundation,
+Inc.
 
 This file is part of GNU Emacs.
 
@@ -1029,6 +1030,10 @@ in `load-file-rep-suffixes'.  If MUST-SUFFIX is non-nil, only the
 return value of `get-load-suffixes' is used, i.e. the file name is
 required to have a non-empty suffix.
 
+When searching suffixes, this function normally stops at the first
+one that exists.  If the option `load-prefer-newer' is non-nil,
+however, it tries all suffixes, and uses whichever file is the newest.
+
 Loading a file records its definitions, and its `provide' and
 `require' calls, in an element of `load-history' whose
 car is the file name loaded.  See `load-history'.
@@ -1129,7 +1134,7 @@ Return t if the file exists and loads successfully.  */)
 	    }
 	}
 
-      fd = openp (Vload_path, file, suffixes, &found, Qnil);
+      fd = openp (Vload_path, file, suffixes, &found, Qnil, load_prefer_newer);
       UNGCPRO;
     }
 
@@ -1252,29 +1257,36 @@ Return t if the file exists and loads successfully.  */)
 #ifdef DOS_NT
 	  fmode = "rb";
 #endif /* DOS_NT */
-	  result = stat (SSDATA (efound), &s1);
-	  if (result == 0)
-	    {
-	      SSET (efound, SBYTES (efound) - 1, 0);
-	      result = stat (SSDATA (efound), &s2);
-	      SSET (efound, SBYTES (efound) - 1, 'c');
-	    }
 
-	  if (result == 0
-	      && timespec_cmp (get_stat_mtime (&s1), get_stat_mtime (&s2)) < 0)
-	    {
-	      /* Make the progress messages mention that source is newer.  */
-	      newer = 1;
+          /* openp already checked for newness, no point doing it again.
+             FIXME would be nice to get a message when openp
+             ignores suffix order due to load_prefer_newer.  */
+          if (!load_prefer_newer)
+            {
+              result = stat (SSDATA (efound), &s1);
+              if (result == 0)
+                {
+                  SSET (efound, SBYTES (efound) - 1, 0);
+                  result = stat (SSDATA (efound), &s2);
+                  SSET (efound, SBYTES (efound) - 1, 'c');
+                }
 
-	      /* If we won't print another message, mention this anyway.  */
-	      if (!NILP (nomessage) && !force_load_messages)
-		{
-		  Lisp_Object msg_file;
-		  msg_file = Fsubstring (found, make_number (0), make_number (-1));
-		  message_with_string ("Source file `%s' newer than byte-compiled file",
-				       msg_file, 1);
-		}
-	    }
+              if (result == 0
+                  && timespec_cmp (get_stat_mtime (&s1), get_stat_mtime (&s2)) < 0)
+                {
+                  /* Make the progress messages mention that source is newer.  */
+                  newer = 1;
+
+                  /* If we won't print another message, mention this anyway.  */
+                  if (!NILP (nomessage) && !force_load_messages)
+                    {
+                      Lisp_Object msg_file;
+                      msg_file = Fsubstring (found, make_number (0), make_number (-1));
+                      message_with_string ("Source file `%s' newer than byte-compiled file",
+                                           msg_file, 1);
+                    }
+                }
+            } /* !load_prefer_newer */
 	  UNGCPRO;
 	}
     }
@@ -1413,7 +1425,7 @@ directories, make sure the PREDICATE function returns `dir-ok' for them.  */)
   (Lisp_Object filename, Lisp_Object path, Lisp_Object suffixes, Lisp_Object predicate)
 {
   Lisp_Object file;
-  int fd = openp (path, filename, suffixes, &file, predicate);
+  int fd = openp (path, filename, suffixes, &file, predicate, false);
   if (NILP (predicate) && fd >= 0)
     emacs_close (fd);
   return file;
@@ -1440,22 +1452,31 @@ static Lisp_Object Qdir_ok;
    nil is stored there on failure.
 
    If the file we find is remote, return -2
-   but store the found remote file name in *STOREPTR.  */
+   but store the found remote file name in *STOREPTR.
+
+   If NEWER is true, try all SUFFIXes and return the result for the
+   newest file that exists.  Does not apply to remote files,
+   or if PREDICATE is specified.  */
 
 int
 openp (Lisp_Object path, Lisp_Object str, Lisp_Object suffixes,
-       Lisp_Object *storeptr, Lisp_Object predicate)
+       Lisp_Object *storeptr, Lisp_Object predicate, bool newer)
 {
   ptrdiff_t fn_size = 100;
   char buf[100];
   char *fn = buf;
-  bool absolute = 0;
+  bool absolute;
   ptrdiff_t want_length;
   Lisp_Object filename;
-  struct gcpro gcpro1, gcpro2, gcpro3, gcpro4, gcpro5, gcpro6;
-  Lisp_Object string, tail, encoded_fn;
+  struct gcpro gcpro1, gcpro2, gcpro3, gcpro4, gcpro5, gcpro6, gcpro7;
+  Lisp_Object string, tail, encoded_fn, save_string;
   ptrdiff_t max_suffix_len = 0;
   int last_errno = ENOENT;
+  int save_fd = -1;
+
+  /* The last-modified time of the newest matching file found.
+     Initialize it to something less than all valid timestamps.  */
+  struct timespec save_mtime = make_timespec (TYPE_MINIMUM (time_t), -1);
 
   CHECK_STRING (str);
 
@@ -1466,14 +1487,13 @@ openp (Lisp_Object path, Lisp_Object str, Lisp_Object suffixes,
 			    SBYTES (XCAR (tail)));
     }
 
-  string = filename = encoded_fn = Qnil;
-  GCPRO6 (str, string, filename, path, suffixes, encoded_fn);
+  string = filename = encoded_fn = save_string = Qnil;
+  GCPRO7 (str, string, save_string, filename, path, suffixes, encoded_fn);
 
   if (storeptr)
     *storeptr = Qnil;
 
-  if (complete_filename_p (str))
-    absolute = 1;
+  absolute = complete_filename_p (str);
 
   for (; CONSP (path); path = XCDR (path))
     {
@@ -1543,30 +1563,31 @@ openp (Lisp_Object path, Lisp_Object str, Lisp_Object suffixes,
 		{
 		  Lisp_Object tmp = call1 (predicate, string);
 		  if (NILP (tmp))
-		    exists = 0;
+		    exists = false;
 		  else if (EQ (tmp, Qdir_ok)
 			   || NILP (Ffile_directory_p (string)))
-		    exists = 1;
+		    exists = true;
 		  else
 		    {
-		      exists = 0;
+		      exists = false;
 		      last_errno = EISDIR;
 		    }
 		}
 
 	      if (exists)
 		{
-		  /* We succeeded; return this descriptor and filename.  */
-		  if (storeptr)
-		    *storeptr = string;
-		  UNGCPRO;
-		  return -2;
+                  /* We succeeded; return this descriptor and filename.  */
+                  if (storeptr)
+                    *storeptr = string;
+                  UNGCPRO;
+                  return -2;
 		}
 	    }
 	  else
 	    {
 	      int fd;
 	      const char *pfn;
+	      struct stat st;
 
 	      encoded_fn = ENCODE_FILE (string);
 	      pfn = SSDATA (encoded_fn);
@@ -1597,7 +1618,6 @@ openp (Lisp_Object path, Lisp_Object str, Lisp_Object suffixes,
 		    }
 		  else
 		    {
-		      struct stat st;
 		      int err = (fstat (fd, &st) != 0 ? errno
 				 : S_ISDIR (st.st_mode) ? EISDIR : 0);
 		      if (err)
@@ -1611,12 +1631,39 @@ openp (Lisp_Object path, Lisp_Object str, Lisp_Object suffixes,
 
 	      if (fd >= 0)
 		{
-		  /* We succeeded; return this descriptor and filename.  */
-		  if (storeptr)
-		    *storeptr = string;
-		  UNGCPRO;
-		  return fd;
+                  if (newer && !NATNUMP (predicate))
+                    {
+                      struct timespec mtime = get_stat_mtime (&st);
+
+		      if (timespec_cmp (mtime, save_mtime) <= 0)
+			emacs_close (fd);
+		      else
+                        {
+			  if (0 <= save_fd)
+			    emacs_close (save_fd);
+                          save_fd = fd;
+                          save_mtime = mtime;
+                          save_string = string;
+                        }
+                    }
+                  else
+                    {
+                      /* We succeeded; return this descriptor and filename.  */
+                      if (storeptr)
+                        *storeptr = string;
+                      UNGCPRO;
+                      return fd;
+                    }
 		}
+
+              /* No more suffixes.  Return the newest.  */
+	      if (0 <= save_fd && ! CONSP (XCDR (tail)))
+                {
+                  if (storeptr)
+                    *storeptr = save_string;
+                  UNGCPRO;
+                  return save_fd;
+                }
 	    }
 	}
       if (absolute)
@@ -4293,8 +4340,14 @@ init_lread (void)
 {
   /* First, set Vload_path.  */
 
-  /* We explicitly ignore EMACSLOADPATH when dumping.  */
-  if (NILP (Vpurify_flag) && egetenv ("EMACSLOADPATH"))
+  /* Ignore EMACSLOADPATH when dumping.  */
+#ifdef CANNOT_DUMP
+  bool use_loadpath = true;
+#else
+  bool use_loadpath = !NILP (Vpurify_flag);
+#endif
+
+  if (use_loadpath && egetenv ("EMACSLOADPATH"))
     {
       Vload_path = decode_env_path ("EMACSLOADPATH", 0, 1);
 
@@ -4625,6 +4678,18 @@ variables, this must be set in the first line of a file.  */);
 	       doc: /* Set to non-nil when `read' encounters an old-style backquote.  */);
   Vold_style_backquotes = Qnil;
   DEFSYM (Qold_style_backquotes, "old-style-backquotes");
+
+  DEFVAR_BOOL ("load-prefer-newer", load_prefer_newer,
+               doc: /* Non-nil means `load' prefers the newest version of a file.
+This applies when a filename suffix is not explicitly specified and
+`load' is trying various possible suffixes (see `load-suffixes' and
+`load-file-rep-suffixes').  Normally, it stops at the first file
+that exists unless you explicitly specify one or the other.  If this
+option is non-nil, it checks all suffixes and uses whichever file is
+newest.
+Note that if you customize this, obviously it will not affect files
+that are loaded before your customizations are read!  */);
+  load_prefer_newer = 0;
 
   /* Vsource_directory was initialized in init_lread.  */
 

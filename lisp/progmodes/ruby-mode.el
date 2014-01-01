@@ -1,6 +1,6 @@
 ;;; ruby-mode.el --- Major mode for editing Ruby files
 
-;; Copyright (C) 1994-2013 Free Software Foundation, Inc.
+;; Copyright (C) 1994-2014 Free Software Foundation, Inc.
 
 ;; Authors: Yukihiro Matsumoto
 ;;	Nobuyoshi Nakada
@@ -226,22 +226,73 @@ This should only be called after matching against `ruby-here-doc-beg-re'."
   :group 'ruby
   :safe 'integerp)
 
+(defcustom ruby-align-to-stmt-keywords nil
+  "Keywords after which we align the expression body to statement.
+
+When nil, an expression that begins with one these keywords is
+indented to the column of the keyword.  Example:
+
+  tee = if foo
+          bar
+        else
+          qux
+        end
+
+If this value is t or contains a symbol with the name of given
+keyword, the expression is indented to align to the beginning of
+the statement:
+
+  tee = if foo
+    bar
+  else
+    qux
+  end
+
+Only has effect when `ruby-use-smie' is t.
+"
+  :type '(choice
+          (const :tag "None" nil)
+          (const :tag "All" t)
+          (repeat :tag "User defined"
+                  (choice (const if)
+                          (const while)
+                          (const unless)
+                          (const until)
+                          (const begin)
+                          (const case)
+                          (const for))))
+  :group 'ruby
+  :safe 'listp
+  :version "24.4")
+
 (defcustom ruby-deep-arglist t
   "Deep indent lists in parenthesis when non-nil.
-Also ignores spaces after parenthesis when 'space."
+Also ignores spaces after parenthesis when `space'.
+Only has effect when `ruby-use-smie' is nil."
   :type 'boolean
   :group 'ruby
   :safe 'booleanp)
 
+;; FIXME Woefully under documented.  What is the point of the last `t'?.
 (defcustom ruby-deep-indent-paren '(?\( ?\[ ?\] t)
   "Deep indent lists in parenthesis when non-nil.
 The value t means continuous line.
-Also ignores spaces after parenthesis when 'space."
+Also ignores spaces after parenthesis when `space'.
+Only has effect when `ruby-use-smie' is nil."
+  :type '(choice (const nil)
+                 character
+                 (repeat (choice character
+                                 (cons character (choice (const nil)
+                                                         (const t)))
+                                 (const t) ; why?
+                                 )))
   :group 'ruby)
 
 (defcustom ruby-deep-indent-paren-style 'space
-  "Default deep indent style."
-  :options '(t nil space) :group 'ruby)
+  "Default deep indent style.
+Only has effect when `ruby-use-smie' is nil."
+  :type '(choice (const t) (const nil) (const space))
+  :group 'ruby)
 
 (defcustom ruby-encoding-map
   '((us-ascii       . nil)       ;; Do not put coding: us-ascii
@@ -360,7 +411,7 @@ It is used when `ruby-encoding-magic-comment-style' is set to `custom'."
     (skip-chars-backward " \t")
     (not (or (bolp)
              (and (memq (char-before)
-                        '(?\; ?- ?+ ?* ?/ ?: ?. ?, ?\[ ?\( ?\{ ?\\ ?& ?> ?< ?%
+                        '(?\; ?- ?+ ?* ?/ ?: ?. ?, ?\[ ?\( ?\\ ?& ?> ?< ?%
                           ?~ ?^))
                   ;; Not the end of a regexp or a percent literal.
                   (not (memq (car (syntax-after (1- (point)))) '(7 15))))
@@ -411,8 +462,8 @@ It is used when `ruby-encoding-magic-comment-style' is set to `custom'."
               (not (looking-at (regexp-opt '("unless" "if" "while" "until" "or"
                                              "else" "elsif" "do" "end" "and")
                                            'symbols))))
-         (memq (syntax-after pos) '(7 15))
-         (looking-at "[([]\\|[-+!~:]\\sw")))))
+         (memq (car (syntax-after pos)) '(7 15))
+         (looking-at "[([]\\|[-+!~]\\sw\\|:\\(?:\\sw\\|\\s.\\)")))))
 
 (defun ruby-smie--at-dot-call ()
   (and (eq ?w (char-syntax (following-char)))
@@ -423,12 +474,10 @@ It is used when `ruby-encoding-magic-comment-style' is set to `custom'."
   (let ((pos (point)))
     (skip-chars-forward " \t")
     (cond
-     ((looking-at "\\s\"") ;A heredoc or a string.
-      (if (not (looking-at "\n"))
-          ""
-        ;; Tokenize the whole heredoc as semicolon.
-        (goto-char (scan-sexps (point) 1))
-        ";"))
+     ((and (looking-at "\n") (looking-at "\\s\""))  ;A heredoc.
+      ;; Tokenize the whole heredoc as semicolon.
+      (goto-char (scan-sexps (point) 1))
+      ";")
      ((and (looking-at "[\n#]")
            (ruby-smie--implicit-semi-p)) ;Only add implicit ; when needed.
       (if (eolp) (forward-char 1) (forward-comment 1))
@@ -436,12 +485,13 @@ It is used when `ruby-encoding-magic-comment-style' is set to `custom'."
      (t
       (forward-comment (point-max))
       (cond
-       ((looking-at ":\\s.+")
-        (goto-char (match-end 0)) (match-string 0)) ;; bug#15208.
        ((and (< pos (point))
              (save-excursion
                (ruby-smie--args-separator-p (prog1 (point) (goto-char pos)))))
         " @ ")
+       ((looking-at ":\\s.+")
+        (goto-char (match-end 0)) (match-string 0)) ;bug#15208.
+       ((looking-at "\\s\"") "")                    ;A string.
        (t
         (let ((dot (ruby-smie--at-dot-call))
               (tok (smie-default-forward-token)))
@@ -521,6 +571,10 @@ It is used when `ruby-encoding-magic-comment-style' is set to `custom'."
     (smie-backward-sexp ";")
     (cons 'column (smie-indent-virtual))))
 
+(defun ruby-smie--indent-to-stmt-p (keyword)
+  (or (eq t ruby-align-to-stmt-keywords)
+      (memq (intern keyword) ruby-align-to-stmt-keywords)))
+
 (defun ruby-smie-rules (kind token)
   (pcase (cons kind token)
     (`(:elem . basic) ruby-indent-level)
@@ -549,11 +603,15 @@ It is used when `ruby-encoding-magic-comment-style' is set to `custom'."
        (ruby-smie--indent-to-stmt))
       ((smie-rule-hanging-p)
        ;; Treat purely syntactic block-constructs as being part of their parent,
-       ;; when the opening token is hanging and the parent is not an open-paren.
-       (let ((state (smie-backward-sexp 'halfsexp)))
-         (unless (and (eq t (car state))
-                      (not (eq (cadr state) (point-min))))
-           (cons 'column (smie-indent-virtual)))))))
+       ;; when the opening token is hanging and the parent is not an
+       ;; open-paren.
+       (cond
+        ((eq (car (smie-indent--parent)) t) nil)
+        ;; When after `.', let's always de-indent,
+        ;; because when `.' is inside the line, the
+        ;; additional indentation from it looks out of place.
+        ((smie-rule-parent-p ".") (smie-rule-parent (- ruby-indent-level)))
+        (t (smie-rule-parent))))))
     (`(:after . ,(or `"(" "[" "{"))
      ;; FIXME: Shouldn't this be the default behavior of
      ;; `smie-indent-after-keyword'?
@@ -564,23 +622,36 @@ It is used when `ruby-encoding-magic-comment-style' is set to `custom'."
        ;; because we want to reject hanging tokens at bol, too.
        (unless (or (eolp) (forward-comment 1))
          (cons 'column (current-column)))))
-    (`(:after . " @ ") (smie-rule-parent))
     (`(:before . "do") (ruby-smie--indent-to-stmt))
-    (`(,(or :before :after) . ".")
-     (unless (smie-rule-parent-p ".")
-       (smie-rule-parent ruby-indent-level)))
-    (`(:before . ,(or `"else" `"then" `"elsif" `"rescue" `"ensure")) 0)
-    (`(:before . ,(or `"when"))
-     (if (not (smie-rule-sibling-p)) 0)) ;; ruby-indent-level
+    (`(:before . ".") ruby-indent-level)
+    (`(:after . "=>") ruby-indent-level)
+    (`(:before . ,(or `"else" `"then" `"elsif" `"rescue" `"ensure"))
+     (smie-rule-parent))
+    (`(:before . "when")
+     ;; Align to the previous `when', but look up the virtual
+     ;; indentation of `case'.
+     (if (smie-rule-sibling-p) 0 (smie-rule-parent)))
     (`(:after . ,(or "=" "iuwu-mod" "+" "-" "*" "/" "&&" "||" "%" "**" "^" "&"
                      "<=>" ">" "<" ">=" "<=" "==" "===" "!=" "<<" ">>"
                      "+=" "-=" "*=" "/=" "%=" "**=" "&=" "|=" "^=" "|"
                      "<<=" ">>=" "&&=" "||=" "and" "or"))
-     (if (smie-rule-parent-p ";" nil) ruby-indent-level))
-    (`(:before . "begin")
-     (unless (save-excursion (skip-chars-backward " \t") (bolp))
-       (smie-rule-parent)))
+     (and (smie-rule-parent-p ";" nil)
+          (smie-indent--hanging-p)
+          ruby-indent-level))
+    (`(:after . ,(or "?" ":")) ruby-indent-level)
+    (`(:before . ,(or "if" "while" "unless" "until" "begin" "case" "for"))
+     (when (not (ruby--at-indentation-p))
+       (if (ruby-smie--indent-to-stmt-p token)
+           (ruby-smie--indent-to-stmt)
+         (cons 'column (current-column)))))
     ))
+
+(defun ruby--at-indentation-p (&optional point)
+  (save-excursion
+    (unless point (setq point (point)))
+    (forward-line 0)
+    (skip-chars-forward " \t")
+    (eq (point) point)))
 
 (defun ruby-imenu-create-index-in-block (prefix beg end)
   "Create an imenu index of methods inside a block."
@@ -712,6 +783,29 @@ The style of the comment is controlled by `ruby-encoding-magic-comment-style'."
           (when (buffer-modified-p)
             (basic-save-buffer-1)))))))
 
+(defvar ruby--electric-indent-chars '(?. ?\) ?} ?\]))
+
+(defun ruby--electric-indent-p (char)
+  (cond
+   ((memq char ruby--electric-indent-chars)
+    ;; Reindent after typing a char affecting indentation.
+    (ruby--at-indentation-p (1- (point))))
+   ((memq (char-after) ruby--electric-indent-chars)
+    ;; Reindent after inserting something in front of the above.
+    (ruby--at-indentation-p (1- (point))))
+   ((or (and (>= char ?a) (<= char ?z)) (memq char '(?_ ?? ?! ?:)))
+    (let ((pt (point)))
+      (save-excursion
+        (skip-chars-backward "[:alpha:]:_?!")
+        (and (ruby--at-indentation-p)
+             (looking-at (regexp-opt (cons "end" ruby-block-mid-keywords)))
+             ;; Outdent after typing a keyword.
+             (or (eq (match-end 0) pt)
+                 ;; Reindent if it wasn't a keyword after all.
+                 (eq (match-end 0) (1- pt)))))))))
+
+;; FIXME: Remove this?  It's unused here, but some redefinitions of
+;; `ruby-calculate-indent' in user init files still call it.
 (defun ruby-current-indentation ()
   "Return the indentation level of current line."
   (save-excursion
@@ -2026,8 +2120,7 @@ See `font-lock-syntax-table'.")
   (setq-local end-of-defun-function 'ruby-end-of-defun)
 
   (add-hook 'after-save-hook 'ruby-mode-set-encoding nil 'local)
-
-  (setq-local electric-indent-chars (append '(?\{ ?\}) electric-indent-chars))
+  (add-hook 'electric-indent-functions 'ruby--electric-indent-p nil 'local)
 
   (setq-local font-lock-defaults '((ruby-font-lock-keywords) nil nil))
   (setq-local font-lock-keywords ruby-font-lock-keywords)

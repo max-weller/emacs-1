@@ -1,5 +1,5 @@
 /* Primitive operations on Lisp data types for GNU Emacs Lisp interpreter.
-   Copyright (C) 1985-1986, 1988, 1993-1995, 1997-2013 Free Software
+   Copyright (C) 1985-1986, 1988, 1993-1995, 1997-2014 Free Software
    Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -686,7 +686,7 @@ Return SYMBOL.  */)
 }
 
 DEFUN ("symbol-function", Fsymbol_function, Ssymbol_function, 1, 1, 0,
-       doc: /* Return SYMBOL's function definition.  Error if that is void.  */)
+       doc: /* Return SYMBOL's function definition, or nil if that is void.  */)
   (register Lisp_Object symbol)
 {
   CHECK_SYMBOL (symbol);

@@ -1,6 +1,6 @@
 ;;; octave.el --- editing octave source files under emacs  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 1997, 2001-2013 Free Software Foundation, Inc.
+;; Copyright (C) 1997, 2001-2014 Free Software Foundation, Inc.
 
 ;; Author: Kurt Hornik <Kurt.Hornik@wu-wien.ac.at>
 ;;	   John Eaton <jwe@octave.org>
@@ -49,6 +49,8 @@
 
 (defgroup octave nil
   "Editing Octave code."
+  :link '(custom-manual "(octave-mode)Top")
+  :link '(url-link "http://www.gnu.org/s/octave")
   :link '(custom-group-link :tag "Font Lock Faces group" font-lock-faces)
   :group 'languages)
 
@@ -180,6 +182,7 @@ parenthetical grouping.")
      ["Hide Process Buffer"     octave-hide-process-buffer t]
      ["Kill Process"            octave-kill-process t])
     "---"
+    ["Octave Mode Manual"       (info "(octave-mode)Top") t]
     ["Customize Octave"         (customize-group 'octave) t]
     ["Submit Bug Report"        report-emacs-bug t]))
 
@@ -648,6 +651,7 @@ mode, include \"-q\" and \"--traditional\"."
     ("warning:\\s-*\\([^:\n]+\\):.*at line \\([0-9]+\\), column \\([0-9]+\\)"
      1 2 3 1 1))
   "Value for `compilation-error-regexp-alist' in inferior octave."
+  :version "24.4"
   :type '(repeat (choice (symbol :tag "Predefined symbol")
                          (sexp :tag "Error specification")))
   :group 'octave)

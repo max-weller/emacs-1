@@ -1,3 +1,388 @@
+2013-12-31  Martin Rudalics  <rudalics@gmx.at>
+
+	* window.c (grow_mini_window): Fix last change.
+
+2013-12-31  Jan Djärv  <jan.h.d@swipnet.se>
+
+	* nsterm.m (windowDidResignKey:): Set mouse_moved to 0 (Bug#8421).
+
+2013-12-31  Fabrice Popineau  <fabrice.popineau@supelec.fr>
+
+	* w32term.c (w32_initialize): Use LCID and LOWORD.
+
+	* w32proc.c (create_child): Use pid_t for 5th argument.
+	(IsValidLocale): Don't provide prototype for MinGW64.
+	(Fw32_get_valid_keyboard_layouts, Fw32_get_keyboard_layout)
+	(Fw32_set_keyboard_layout): Use HKL and HIWORD/LOWORD.
+
+	* w32heap.c (allocate_heap) [_WIN64]: Use "ull", not "i64", which
+	MinGW64 doesn't support.
+
+	* lisp.h (EMACS_INT) [_WIN64]: Define for the MinGW64 build.
+
+	* w32.c (set_named_security_info): New function.
+	(acl_set_file): Fall back on set_named_security_info if
+	set_file_security fails.
+	(g_b_init_set_named_security_info_w)
+	(g_b_init_set_named_security_info_a): New static variables.
+	(globals_of_w32): Initialize them to zero.
+	(set_named_security_info): Set them to non-zero if the
+	corresponding API is available.
+	(SetNamedSecurityInfoW_Proc, SetNamedSecurityInfoA_Proc): New
+	function typedefs.
+
+2013-12-31  Martin Rudalics  <rudalics@gmx.at>
+
+	Some more fixes following pixelwise resize changes including one
+	for Bug#16306.
+	* gtkutil.c (x_wm_set_size_hint): Have size hints respect value
+	of frame_resize_pixelwise.
+	* widget.c (pixel_to_text_size): New function.
+	(update_wm_hints): Have size hints respect value of
+	frame_resize_pixelwise.
+	(EmacsFrameResize): Alway process resize requests pixelwise.
+	* window.c (grow_mini_window): Make sure mini window is at least
+	one line tall.
+	* xdisp.c (display_menu_bar): Make sure menubar extends till
+	right end of frame.
+	* xfns.c (x_set_menu_bar_lines): Resize frame windows pixelwise.
+	(x_set_tool_bar_lines): Calculate pixelwise.
+	* xterm.c (x_wm_set_size_hint): Have size hints respect value of
+	frame_resize_pixelwise.
+
+2013-12-30  Juanma Barranquero  <lekktu@gmail.com>
+
+	* fileio.c (Fcopy_file) [!WINDOWSNT]: Don't declare on Windows
+	variables not used there.
+
+2013-12-30  Eli Zaretskii  <eliz@gnu.org>
+
+	* w32.c (sys_umask): New function.  (Bug#16299)
+
+2013-12-30  Martin Rudalics  <rudalics@gmx.at>
+
+	* dispnew.c (change_frame_size_1): Take old width of root window
+	from that window's pixel width.  (Bug#16284)
+
+2013-12-29  Paul Eggert  <eggert@cs.ucla.edu>
+
+	Plain copy-file no longer chmods an existing destination (Bug#16133).
+	* fileio.c (realmask): Now a static var, not a local.
+	(barf_or_query_if_file_exists): New arg KNOWN_TO_EXIST.
+	Remove arg STATPTR.  All uses changed.
+	(Fcopy_file): Do not alter permissions of existing destinations,
+	unless PRESERVE-PERMISSIONS (renamed from
+	PRESERVE-EXTENDED-ATTRIBUTES) is non-nil.
+	Avoid race when testing for existing destinations and for
+	when input and output files are the same.
+	If changing the group fails, adjust both default and
+	preserved permissions so that access is not granted to the
+	wrong group.
+	(Fset_default_file_modes, init_fileio): Update realmask.
+	(Fdefault_file_modes): Use realmask instead of calling umask.
+
+2013-12-28  Paul Eggert  <eggert@cs.ucla.edu>
+
+	Fix pipe bug with OS X emacs --daemon (Bug#16262).
+	* emacs.c (main) [DAEMON_MUST_EXEC]: Clear the close-on-exec
+	flags on the daemon pipe ends before execing.
+
+2013-12-28  Eli Zaretskii  <eliz@gnu.org>
+
+	* w32fns.c (Fx_create_frame): Error out if called from a TTY
+	session.  (Bug#14739)
+
+2013-12-27  Jarek Czekalski  <jarekczek@poczta.onet.pl>
+
+	* callproc.c (Vexec_path): Document that exec-directory is in it.
+
+2013-12-27  Steve Purcell  <steve@sanityinc.com>  (tiny change)
+
+	* nsterm.m (syms_of_nsterm): Enable ns-use-srgb-colorspace by
+	default.
+
+2013-12-27  Chong Yidong  <cyd@gnu.org>
+
+	* data.c (Fsymbol_function): Doc fix.
+
+2013-12-26  Martin Rudalics  <rudalics@gmx.at>
+
+	Some more tinkering with Bug#16051.
+	* window.c (resize_frame_windows): Don't let the size of the
+	root window drop below the frame's default character size.
+	Never ever delete any subwindows - let the window manager do the
+	clipping.
+
+	* w32fns.c (x_set_tool_bar_lines): Rewrite calculation of number
+	of toolbar lines needed when they exceed the height of the root
+	window.
+	(unwind_create_frame_1): New function.
+	(Fx_create_frame): Generally inhibit calling the window
+	configuration change hook here.  Remove extra call to
+	change_frame_size - it's not needed when we don't run the
+	configuration change hook.
+
+2013-12-26  Paul Eggert  <eggert@cs.ucla.edu>
+
+	Fix core dumps with gcc -fsanitize=address and GNU/Linux.
+	On my Fedora 19 platform the core dumps were so big that
+	my desktop became nearly catatonic.
+	* alloc.c (no_sanitize_memcpy) [MAX_SAVE_STACK > 0]: New function.
+	(Fgarbage_collect) [MAX_SAVE_STACK > 0]: Use it.
+	(USE_ALIGNED_MALLOC): Do not define if addresses are sanitized.
+	(mark_memory): Use ATTRIBUTE_NO_SANITIZE_ADDRESS rather than
+	a clang-only syntax.
+	* conf_post.h (__has_feature): New macro, if not already defined.
+	(ADDRESS_SANITIZER, ADDRESS_SANITIZER_WORKAROUND)
+	(ATTRIBUTE_NO_SANITIZE_ADDRESS): New macros.
+
+2013-12-25  Eli Zaretskii  <eliz@gnu.org>
+
+	* w32fns.c (Fw32_shell_execute): Make DOCUMENT absolute only if it
+	is a file name.  (Bug#16252)
+
+2013-12-25  Chong Yidong  <cyd@gnu.org>
+
+	* keyboard.c (Voverriding_terminal_local_map):
+	(Voverriding_local_map): Doc fix.
+
+	* keymap.c (Vemulation_mode_map_alists): Doc fix.
+
+2013-12-24  Eli Zaretskii  <eliz@gnu.org>
+
+	* w32fns.c (Fw32_shell_execute): Ensure DOCUMENT is an absolute
+	file name when it is submitted to ShellExecute.  Simplify code.
+	Don't test DOCUMENT for being a string, as that is enforced by
+	CHECK_STRING.  Doc fix.
+
+2013-12-23  Eli Zaretskii  <eliz@gnu.org>
+
+	* xdisp.c (tool_bar_height): Use WINDOW_PIXEL_WIDTH to set up the
+	iterator X limits, not FRAME_TOTAL_COLS, for consistency with what
+	redisplay_tool_bar does.  Improve and fix commentary.
+	(hscroll_window_tree): Don't assume w->cursor.vpos is within the
+	limits of the glyph matrices.  (Bug#16051)
+	(redisplay_tool_bar): Modify the tool-bar-lines frame parameter
+	only when the new size is different from the old one, and the new
+	size can be achieved given the frame height.
+
+2013-12-23  Jan Djärv  <jan.h.d@swipnet.se>
+
+	* conf_post.h: Use unsigned it for bool_bf if GNUSTEP (Bug#16210).
+
+2013-12-23  Glenn Morris  <rgm@gnu.org>
+
+	* lread.c (Fload): Mention load-prefer-newer in doc.
+
+2013-12-22  Martin Rudalics  <rudalics@gmx.at>
+
+	Handle Bug#16207 by being more restrictive when running hooks.
+	* window.c (unwind_change_frame): New function.
+	(Fset_window_configuration): Don't run configuration change hook
+	while the frame configuration is unsafe.  Call select_window
+	twice.
+
+2013-12-22  Xue Fuqiao  <xfq.free@gmail.com>
+
+	* lread.c (syms_of_lread) <load_prefer_newer>: Doc fix.
+
+2013-12-21  Jan Djärv  <jan.h.d@swipnet.se>
+
+	* nsterm.h: Declare EmacsColor category.
+
+	* nsterm.m (NSColor): Implement EmacsColor category.
+	(ns_get_color): Use colorUsingDefaultColorSpace.
+	(ns_get_color, ns_term_init): Use colorForEmacsRed.
+
+	* nsfns.m (Fxw_color_values): Use colorUsingDefaultColorSpace.
+
+2013-12-21  Eli Zaretskii  <eliz@gnu.org>
+
+	* image.c (fn_png_longjmp) [WINDOWSNT]: Mark the function as
+	having the PNG_NORETURN attribute, to avoid compiler warning in
+	my_png_error.
+
+2013-12-21  YAMAMOTO Mitsuharu  <mituharu@math.s.chiba-u.ac.jp>
+
+	* w32term.h (struct scroll_bar): Remove member `fringe_extended_p'.
+
+	* w32term.c (w32_draw_fringe_bitmap, x_scroll_run): Remove code for
+	fringe background extension.
+	(x_scroll_bar_create): Remove variables `sb_left' and `sb_width',
+	because they are now always the same as `left' and `width',
+	respectively.  Remove code for the case that `width' and
+	`sb_width' are different.
+
+2013-12-20  Martin Rudalics  <rudalics@gmx.at>
+
+	Remove scroll_bar_actual_width from frames.
+	* frame.h (struct frame): Remove scroll_bar_actual_width slot.
+	* frame.c (Fscroll_bar_width): Return scroll bar area width.
+	(x_figure_window_size):
+	* nsterm.m (x_set_window_size):
+	* widget.c (set_frame_size):
+	* w32term.c (x_set_window_size):
+	* xterm.c (x_set_window_size, x_set_window_size_1): Don't set
+	scroll_bar_actual_width.
+
+	Convert scroll_bar members to integers on Windows.
+	* w32term.h (struct scroll_bar): Convert top, left, width,
+	height, start, end and dragging to integers.
+	* w32fns.c (w32_createscrollbar): Remove XINT conversions for
+	scroll_bar members.
+	* w32term.c (w32_set_scroll_bar_thumb)
+	(w32_scroll_bar_handle_click): Remove XINT conversions for
+	scroll_bar members.  Treat bar->dragging as integer.
+	(x_scroll_bar_create): Call ALLOCATE_PSEUDOVECTOR with "top" as
+	first element.  Remove XINT conversions for scroll_bar members.
+	(w32_set_vertical_scroll_bar, x_scroll_bar_report_motion):
+	Remove XINT conversions for scroll_bar members.
+
+	Fix assignment for new window total sizes.
+	* window.c (Fwindow_resize_apply_total): Assign values for
+	minibuffer window.
+
+2013-12-20  Chong Yidong  <cyd@gnu.org>
+
+	* textprop.c (Fadd_face_text_property): Doc fix.  Rename `appendp'
+	argument to `append'.
+
+2013-12-19  Eli Zaretskii  <eliz@gnu.org>
+
+	* xdisp.c (extend_face_to_end_of_line): Use default face, not the
+	current text face, for extending the face of the display margins.
+	(Bug#16192)
+
+	* casefiddle.c (Fupcase_word, Fdowncase_word, Fcapitalize_word):
+	Doc fix.  (Bug#16190)
+
+2013-12-19  Jan Djärv  <jan.h.d@swipnet.se>
+
+	* nsterm.h (KEY_NS_DRAG_FILE, KEY_NS_DRAG_COLOR, KEY_NS_DRAG_TEXT):
+	Remove.
+
+	* nsterm.m (Qfile, Qurl): New.
+	(EV_MODIFIERS2): New macro.
+	(EV_MODIFIERS): Use EV_MODIFIERS2.
+	(ns_term_init): Remove font and color from DND, does not work on
+	newer OSX, and other ports don't have them.
+	(performDragOperation:): Handle modifiers used during drag.
+	Use DRAG_N_DROP_EVENT instead of NS specific events (Bug#8051).
+	Remove global Lisp variables used to communicate with ns-win.el.
+	Remove font and color handling.
+	(syms_of_nsterm): Defsym Qfile and Qurl.
+
+2013-12-19  Anders Lindgren  <andlind@gmail.com>
+
+	* nsterm.m (NSTRACE_SIZE, NSTRACE_RECT): New macros.
+	(ns_constrain_all_frames, x_set_offset): Remove assignment to
+	dont_constrain.
+	(updateFrameSize:, windowWillResize:toSize:): Add trace.
+	(constrainFrameRect): Remove special case nr_screens == 1.
+	Don't constrain size to size of view.
+
+	* nsterm.h (ns_output): Remove dont_constrain.
+
+2013-12-19  Anders Lindgren  <andlind@gmail.com>
+
+	* nsterm.m (mouseDown:): Generate HORIZ_WHEEL_EVENT.
+
+2013-12-18  Paul Eggert  <eggert@cs.ucla.edu>
+
+	Minor fixes for recent openp changes.
+	* lisp.h (GCPRO7): New macro.
+	* lread.c (openp): Use bool for boolean; all callers changed.
+	Protect save_string from GC.  Don't assume that file descriptors
+	are nonzero.  Redo save_mtime comparison to avoid bogus GCC
+	warning about uninitialized variable.
+
+2013-12-18  Eli Zaretskii  <eliz@gnu.org>
+
+	* w32fns.c (emacs_abort): Use intptr_t as argument of
+	INT_BUFSIZE_BOUND, to avoid compiler warnings.
+
+2013-12-18  Glenn Morris  <rgm@gnu.org>
+
+	* lread.c (Fload): Pass load_prefer_newer to openp.
+	Don't bother checking mtime if openp already did it.
+	(openp): Add `newer' argument, to check all suffixes
+	and find the newest file.
+	(syms_of_lread) <load_prefer_newer>: New option.  (Bug#2061)
+	* callproc.c (call_process):
+	* charset.c (load_charset_map_from_file):
+	* emacs.c (init_cmdargs):
+	* image.c (x_create_bitmap_from_file, x_find_image_file):
+	* lisp.h (openp):
+	* lread.c (Flocate_file_internal):
+	* process.c (Fformat_network_address):
+	* sound.c (Fplay_sound_internal):
+	* w32.c (check_windows_init_file):
+	* w32proc.c (sys_spawnve): Update for new arg spec of openp.
+
+	* emacs.c (standard_args) [HAVE_NS]: Remove -disable-font-backend.
+
+2013-12-17  Eli Zaretskii  <eliz@gnu.org>
+
+	* w32.c (getloadavg): Don't index samples[] array with negative
+	indices.  Recover from wall-clock time being set backwards.
+
+	* w32term.c (w32_initialize): Declare the argument of
+	set_user_model as const.
+
+	* w32menu.c <MessageBoxW_Proc>: Fix argument declarations.
+	(w32_menu_show): Constify some arguments passed to MessageBox.
+
+	* w32uniscribe.c (uniscribe_font_driver): Use LISP_INITIALLY_ZERO
+	to initialize Lisp objects.
+
+	* w32font.c (w32font_driver): Use LISP_INITIALLY_ZERO to
+	initialize Lisp objects.
+
+	* frame.c (x_set_frame_parameters) [HAVE_X_WINDOWS]: Declare and
+	use variables used only on X under that condition.
+
+	* fileio.c (Fcopy_file) [!WINDOWSNT]: Don't declare on Windows
+	variables not used there.
+
+2013-12-16  Paul Eggert  <eggert@cs.ucla.edu>
+
+	Fix problems with CANNOT_DUMP and EMACSLOADPATH.
+	* lread.c (init_lread): If CANNOT_DUMP, we can't be dumping.
+
+2013-12-16  Eli Zaretskii  <eliz@gnu.org>
+
+	* xdisp.c (Fmove_point_visually): Fix subtle bugs in the fallback
+	code, revealed in presence of R2L characters, character
+	compositions, and display vectors.  A better fix for Bug#16148.
+	(extend_face_to_end_of_line): Don't reference tool_bar_window in
+	GTK and NS builds, they don't have this member of struct frame.
+
+	* dispextern.h (struct composition_it): Correct a comment for the
+	'width' member.
+
+2013-12-16  Paul Eggert  <eggert@cs.ucla.edu>
+
+	* font.h (valid_font_driver) [!ENABLE_CHECKING]: Define a dummy.
+	This prevents a compilation error on C compilers that do not
+	default functions to return 'int' if not declared.  Also, add
+	INLINE_HEADER_BEGIN and INLINE_HEADER_END to this include file,
+	since it now uses inline functions.
+
+2013-12-16  Eli Zaretskii  <eliz@gnu.org>
+
+	* xdisp.c (extend_face_to_end_of_line): Don't fill background of
+	display margins on mode line, header line, and in the frame's
+	tool-bar window.  (Bug#16165)
+
+2013-12-16  Andreas Schwab  <schwab@suse.de>
+
+	* gnutls.c (Fgnutls_boot): Properly check Flistp return value.
+
+2013-12-16  Teodor Zlatanov  <tzz@lifelogs.com>
+
+	* gnutls.c (Fgnutls_boot): Use `Flistp' instead of
+	`CHECK_LIST_CONS`.
+
 2013-12-16  Martin Rudalics  <rudalics@gmx.at>
 
 	* w32term.c (w32_enable_frame_resize_hack): Default to 1.
@@ -249,7 +634,7 @@
 
 	Avoid undefined behavior with huge regexp interval counts.
 	* regex.c (GET_INTERVAL_COUNT): Rename from 'GET_UNSIGNED_NUMBER',
-	since it's now specialized to interval counts.	All uses changed.
+	since it's now specialized to interval counts.  All uses changed.
 	Do not assume wrapraound on signed integer overflow.
 	(regex_compile): Simplify based on the above changes.
 
@@ -342,8 +727,8 @@
 	use MAX_UTF8_PATH for size of file-name strings.
 	(emacs_readlinkat): Build an explicitly unibyte string for file
 	names.
-	(syms_of_fileio) <file-name-coding-system>
-	default-file-name-coding-system>: Mention MS-Windows peculiarities.
+	(syms_of_fileio) <file-name-coding-system>:
+	<default-file-name-coding-system>: Mention MS-Windows peculiarities.
 
 	* emacs.c (init_cmdargs) [WINDOWSNT]: Convert argv[0] to UTF-8.
 	(main) [WINDOWSNT]: Convert the argv[] elements that are files or
@@ -446,7 +831,7 @@
 	change_frame_size should already have done it.
 	(x_new_font): Assign new tool- and menu-bar heights.
 	(x_set_window_size_1): Account for tool- and menu-bar heights
-	(Bug#16013). Don't set pixel sizes since change_frame_size
+	(Bug#16013).  Don't set pixel sizes since change_frame_size
 	should already have done it.
 
 2013-12-11  Paul Eggert  <eggert@cs.ucla.edu>
@@ -1243,7 +1628,7 @@
 
 2013-11-20  Jan Djärv  <jan.h.d@swipnet.se>
 
-	* nsterm.m (init, run, stop:): Enable again. stop calls super stop
+	* nsterm.m (init, run, stop:): Enable again.  stop calls super stop
 	to handle dialogs.
 
 	* nsterm.m (init, run, stop:): Comment out for now, does not work
@@ -2028,7 +2413,7 @@
 2013-10-17  Barry O'Reilly  <gundaetiapo@gmail.com>
 
 	Don't run timers in input-pending-p.  Its new check-timers param
-	provides the prior behavior. (Bug#15045).
+	provides the prior behavior.  (Bug#15045).
 	* src/keyboard.c (Finput_pending_p): Accept optional check-timers
 	param.
 
@@ -3270,7 +3655,7 @@
 	(nsfont_open): Set font driver type.
 	Set font->ascent and font->descent.  Figure out font instead of
 	ns_tmp_font, and flags instead of ns_tmp_flags.
-	Fix indentation. Remove call to ns_draw_text_decoration,
+	Fix indentation.  Remove call to ns_draw_text_decoration,
 	moved to nsterm.
 
 	* nsfns.m: Include macfont.h.
@@ -3877,7 +4262,7 @@
 	* nsterm.m (last_window): New variable.
 	(EV_TRAILER2): New macro.
 	(EV_TRAILER): Call EV_TRAILER2.
-	(mouseMoved:):  Add support for mouse-autoselect-window
+	(mouseMoved:): Add support for mouse-autoselect-window
 	on nextstep (Bug#6888).
 
 2013-08-28  Andreas Schwab  <schwab@suse.de>
@@ -5195,7 +5580,7 @@
 	(handle_one_xevent, syms_of_xterm): Adjust users.
 	(x_flush): Call XFlush once per each X display, not frame.
 	This is better because this code always unconditionally skips
-	non-X frames in Vframe_list and issues the only	XFlush if we
+	non-X frames in Vframe_list and issues the only XFlush if we
 	have more than one X frame on the same X display.
 	(any_help_event_p, x_draw_glyph_string_background, x_display_ok):
 	Use bool for booleans.
@@ -7371,7 +7756,7 @@
 
 	* keyboard.c: Apply keyboard decoding only to events that come directly
 	from the tty, not from unread-command-events (bug#14368).
-	(read_event_from_main_queue): New function, extracted from read_char).
+	(read_event_from_main_queue): New function, extracted from read_char.
 	(read_decoded_char): Remove.
 	(read_decoded_event_from_main_queue): New function to replace it.
 	(read_char): Use it.
@@ -7835,7 +8220,7 @@
 
 2013-04-14  Eli Zaretskii  <eliz@gnu.org>
 
-	* buffer.c (syms_of_buffer) <left-margin-width, right-margin-width>
+	* buffer.c (syms_of_buffer) <left-margin-width, right-margin-width>:
 	<left-fringe-width, right-fringe-width, fringes-outside-margins>:
 	Mention in the doc string that setting these variables takes
 	effect only after a call to set-window-buffer.  (Bug#14200)
@@ -8559,7 +8944,7 @@ See ChangeLog.12 for earlier changes.
 ;; coding: utf-8
 ;; End:
 
-  Copyright (C) 2011-2013 Free Software Foundation, Inc.
+  Copyright (C) 2011-2014 Free Software Foundation, Inc.
 
   This file is part of GNU Emacs.
 

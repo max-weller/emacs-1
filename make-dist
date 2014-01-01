@@ -1,7 +1,8 @@
 #!/bin/sh
 ### make-dist: create an Emacs distribution tar file from current srcdir
 
-## Copyright (C) 1995, 1997-1998, 2000-2013 Free Software Foundation, Inc.
+## Copyright (C) 1995, 1997-1998, 2000-2014 Free Software Foundation,
+## Inc.
 
 ## This file is part of GNU Emacs.
 
@@ -344,7 +345,8 @@ echo "Making links to \`leim' and its subdirectories"
 echo "Making links to \`build-aux'"
 (cd build-aux
  ln compile config.guess config.sub depcomp msys-to-w32 ../${tempdir}/build-aux
- ln install-sh missing move-if-change update-subdirs ../${tempdir}/build-aux
+ ln install-sh missing move-if-change ../${tempdir}/build-aux
+ ln update-copyright update-subdirs ../${tempdir}/build-aux
  ln dir_top make-info-dir ../${tempdir}/build-aux)
 
 echo "Making links to \`build-aux/snippet'"

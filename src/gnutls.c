@@ -1,5 +1,5 @@
 /* GnuTLS glue for GNU Emacs.
-   Copyright (C) 2010-2013 Free Software Foundation, Inc.
+   Copyright (C) 2010-2014 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -825,7 +825,8 @@ one trustfile (usually a CA bundle).  */)
   verify_error          = Fplist_get (proplist, QCgnutls_bootprop_verify_error);
   prime_bits            = Fplist_get (proplist, QCgnutls_bootprop_min_prime_bits);
 
-  CHECK_LIST_CONS (verify_error, verify_error);
+  if (NILP (Flistp (verify_error)))
+    error ("gnutls-boot: invalid :verify_error parameter (not a list)");
 
   if (!STRINGP (hostname))
     error ("gnutls-boot: invalid :hostname parameter (not a string)");

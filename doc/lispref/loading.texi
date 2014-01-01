@@ -1,6 +1,6 @@
 @c -*-texinfo-*-
 @c This is part of the GNU Emacs Lisp Reference Manual.
-@c Copyright (C) 1990-1995, 1998-1999, 2001-2013 Free Software
+@c Copyright (C) 1990-1995, 1998-1999, 2001-2014 Free Software
 @c Foundation, Inc.
 @c See the file elisp.texi for copying conditions.
 @node Loading
@@ -92,6 +92,10 @@ If the optional argument @var{must-suffix} is non-@code{nil}, then
 @code{load} insists that the file name used must end in either
 @samp{.el} or @samp{.elc} (possibly extended with a compression
 suffix), unless it contains an explicit directory name.
+
+If the option @code{load-prefer-newer} is non-@code{nil}, then when
+searching suffixes, @code{load} selects whichever version of a file
+(@samp{.elc}, @samp{.el}, etc.) has been modified most recently.
 
 If @var{filename} is a relative file name, such as @file{foo} or
 @file{baz/foo.bar}, @code{load} searches for the file using the variable
@@ -245,6 +249,12 @@ value of @code{(get-load-suffixes)} and then those in
 @code{load-file-rep-suffixes}.  If @var{nosuffix} is non-@code{nil},
 it skips the former group, and if @var{must-suffix} is non-@code{nil},
 it skips the latter group.
+
+@defopt load-prefer-newer
+If this option is non-@code{nil}, then rather than stopping at the
+first suffix that exists, @code{load} tests them all, and uses
+whichever file is the newest.
+@end defopt
 
 @node Library Search
 @section Library Search

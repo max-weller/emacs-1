@@ -1,6 +1,6 @@
 ;;; cfengine.el --- mode for editing Cfengine files
 
-;; Copyright (C) 2001-2013 Free Software Foundation, Inc.
+;; Copyright (C) 2001-2014 Free Software Foundation, Inc.
 
 ;; Author: Dave Love <fx@gnu.org>
 ;; Maintainer: Ted Zlatanov <tzz@lifelogs.com>
@@ -80,11 +80,12 @@
 Used for syntax discovery and checking.  Set to nil to disable
 the `compile-command' override.  In that case, the ElDoc support
 will use a fallback syntax definition."
+  :version "24.4"
   :group 'cfengine
-  :type 'file)
+  :type '(choice file (const nil)))
 
 (defcustom cfengine-parameters-indent '(promise pname 0)
-  "*Indentation of CFEngine3 promise parameters (hanging indent).
+  "Indentation of CFEngine3 promise parameters (hanging indent).
 
 For example, say you have this code:
 
@@ -138,7 +139,7 @@ bundle agent rcfiles
                 perms => mog(\"600\", \"tzz\", \"tzz\");
 }
 "
-
+  :version "24.4"
   :group 'cfengine
   :type '(list
           (choice (const :tag "Anchor at beginning of promise" promise)
@@ -1165,24 +1166,18 @@ Intended as the value of `indent-line-function'."
 ;; CLASS: [.|&!()a-zA-Z0-9_\200-\377]+::
 ;; CATEGORY: [a-zA-Z_]+:
 
-(defun cfengine3--current-word (&optional bounds)
-  "Propose a word around point in the current CFEngine 3 buffer."
-  (save-excursion
-    (skip-syntax-forward "w_")
-    (when (search-backward-regexp
-           cfengine-mode-syntax-functions-regex
-           (point-at-bol)
-           t)
-      (if bounds
-          (list (point) (match-end 1))
-        (match-string 1)))))
-
 (defun cfengine3--current-function ()
   "Look up current CFEngine 3 function"
   (let* ((syntax (cfengine3-make-syntax-cache))
          (flist (assq 'functions syntax)))
     (when flist
-      (let ((w (cfengine3--current-word)))
+      (let ((w (save-excursion
+                 (skip-syntax-forward "w_")
+                 (when (search-backward-regexp
+                        cfengine-mode-syntax-functions-regex
+                        (point-at-bol)
+                        t)
+                   (match-string 1)))))
         (and w (assq (intern w) flist))))))
 
 ;; format from "cf-promises -s json", e.g. "sort" function:
@@ -1271,7 +1266,10 @@ see.  Use it by executing `turn-on-eldoc-mode'."
 (defun cfengine3-completion-function ()
   "Return completions for function name around or before point."
   (cfengine3-make-syntax-cache)
-  (let* ((bounds (cfengine3--current-word t))
+  (let* ((bounds (save-excursion
+                   (let ((p (point)))
+                     (skip-syntax-backward "w_" (point-at-bol))
+                     (list (point) p))))
          (syntax (cfengine3-make-syntax-cache))
          (flist (assq 'functions syntax)))
     (when bounds

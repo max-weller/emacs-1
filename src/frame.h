@@ -1,5 +1,5 @@
 /* Define frame-object for GNU Emacs.
-   Copyright (C) 1993-1994, 1999-2013 Free Software Foundation, Inc.
+   Copyright (C) 1993-1994, 1999-2014 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -435,10 +435,6 @@ struct frame
      and the current font width.  */
   int config_scroll_bar_width;
   int config_scroll_bar_cols;
-
-  /* The size of the extra width currently allotted for vertical
-     scroll bars in this frame, in pixels.  */
-  int scroll_bar_actual_width;
 
   /* The baud rate that was used to calculate costs for this frame.  */
   int cost_calculation_baud_rate;

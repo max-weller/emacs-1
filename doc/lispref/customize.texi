@@ -1,6 +1,6 @@
 @c -*-texinfo-*-
 @c This is part of the GNU Emacs Lisp Reference Manual.
-@c Copyright (C) 1997-2013 Free Software Foundation, Inc.
+@c Copyright (C) 1997-2014 Free Software Foundation, Inc.
 @c See the file elisp.texi for copying conditions.
 @node Customization
 @chapter Customization Settings
@@ -1427,6 +1427,17 @@ is the name of a Custom theme (i.e., a Custom theme which has been
 loaded into Emacs, whether or not the theme is enabled).  Otherwise,
 it returns @code{nil}.
 @end defun
+
+@defvar custom-known-themes
+The value of this variable is a list of themes loaded into Emacs.
+Each theme is represented by a Lisp symbol (the theme name).  The
+default value of this variable is a list containing two ``dummy''
+themes: @code{(user changed)}.  The @code{changed} theme stores
+settings made before any Custom themes are applied (e.g., variables
+set outside of Customize).  The @code{user} theme stores settings the
+user has customized and saved.  Any additional themes declared with
+the @code{deftheme} macro are added to the front of this list.
+@end defvar
 
 @deffn Command load-theme theme &optional no-confirm no-enable
 This function loads the Custom theme named @var{theme} from its source

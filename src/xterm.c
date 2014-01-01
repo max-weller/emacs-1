@@ -1,6 +1,6 @@
 /* X Communication module for terminals which understand the X protocol.
 
-Copyright (C) 1989, 1993-2013 Free Software Foundation, Inc.
+Copyright (C) 1989, 1993-2014 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -8537,10 +8537,6 @@ x_set_window_size_1 (struct frame *f, int change_gravity, int width, int height,
   int pixelwidth, pixelheight;
 
   check_frame_size (f, &width, &height, pixelwise);
-  f->scroll_bar_actual_width
-    = (!FRAME_HAS_VERTICAL_SCROLL_BARS (f)
-       ? 0
-       : FRAME_CONFIG_SCROLL_BAR_COLS (f) * FRAME_COLUMN_WIDTH (f));
 
   compute_fringe_widths (f, 0);
 
@@ -8623,10 +8619,7 @@ x_set_window_size (struct frame *f, int change_gravity, int width, int height, b
 #endif
       text_width = FRAME_PIXEL_TO_TEXT_WIDTH (f, FRAME_PIXEL_WIDTH (f));
       text_height = FRAME_PIXEL_TO_TEXT_HEIGHT (f, pixelh);
-      /* Update f->scroll_bar_actual_width because it is used in
-         FRAME_PIXEL_WIDTH_TO_TEXT_COLS.  */
-      f->scroll_bar_actual_width
-        = FRAME_SCROLL_BAR_COLS (f) * FRAME_COLUMN_WIDTH (f);
+
       change_frame_size (f, text_width, text_height, 0, 1, 0, 1);
     }
 
@@ -9300,8 +9293,9 @@ x_wm_set_size_hint (struct frame *f, long flags, bool user_position)
   size_hints.height = FRAME_PIXEL_HEIGHT (f);
   size_hints.width = FRAME_PIXEL_WIDTH (f);
 
-  size_hints.width_inc = FRAME_COLUMN_WIDTH (f);
-  size_hints.height_inc = FRAME_LINE_HEIGHT (f);
+  size_hints.width_inc = frame_resize_pixelwise ? 1 : FRAME_COLUMN_WIDTH (f);
+  size_hints.height_inc = frame_resize_pixelwise ? 1 : FRAME_LINE_HEIGHT (f);
+
   size_hints.max_width = x_display_pixel_width (FRAME_DISPLAY_INFO (f))
     - FRAME_TEXT_COLS_TO_PIXEL_WIDTH (f, 0);
   size_hints.max_height = x_display_pixel_height (FRAME_DISPLAY_INFO (f))
@@ -9317,6 +9311,14 @@ x_wm_set_size_hint (struct frame *f, long flags, bool user_position)
 
     check_frame_size (f, &min_cols, &min_rows, 0);
 
+    if (frame_resize_pixelwise)
+      /* Needed to prevent a bad protocol error crash when making the
+	 frame size very small.  */
+      {
+	min_cols = 2 * min_cols;
+	min_rows = 2 * min_rows;
+      }
+
     /* The window manager uses the base width hints to calculate the
        current number of rows and columns in the frame while
        resizing; min_width and min_height aren't useful for this
@@ -9330,8 +9332,8 @@ x_wm_set_size_hint (struct frame *f, long flags, bool user_position)
     size_hints.flags |= PBaseSize;
     size_hints.base_width = base_width;
     size_hints.base_height = base_height + FRAME_MENUBAR_HEIGHT (f);
-    size_hints.min_width  = base_width + min_cols * size_hints.width_inc;
-    size_hints.min_height = base_height + min_rows * size_hints.height_inc;
+    size_hints.min_width  = base_width + min_cols * FRAME_COLUMN_WIDTH (f);
+    size_hints.min_height = base_height + min_rows * FRAME_LINE_HEIGHT (f);
   }
 
   /* If we don't need the old flags, we don't need the old hint at all.  */

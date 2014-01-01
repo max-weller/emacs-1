@@ -1,5 +1,6 @@
 /* Utility and Unix shadow routines for GNU Emacs on the Microsoft Windows API.
-   Copyright (C) 1994-1995, 2000-2013 Free Software Foundation, Inc.
+
+Copyright (C) 1994-1995, 2000-2014 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -302,6 +303,8 @@ static BOOL g_b_init_convert_sddl_to_sd;
 static BOOL g_b_init_is_valid_security_descriptor;
 static BOOL g_b_init_set_file_security_w;
 static BOOL g_b_init_set_file_security_a;
+static BOOL g_b_init_set_named_security_info_w;
+static BOOL g_b_init_set_named_security_info_a;
 static BOOL g_b_init_get_adapters_info;
 
 /*
@@ -376,6 +379,22 @@ typedef BOOL (WINAPI *SetFileSecurityA_Proc) (
     LPCSTR lpFileName,
     SECURITY_INFORMATION SecurityInformation,
     PSECURITY_DESCRIPTOR pSecurityDescriptor);
+typedef DWORD (WINAPI *SetNamedSecurityInfoW_Proc) (
+    LPCWSTR lpObjectName,
+    SE_OBJECT_TYPE ObjectType,
+    SECURITY_INFORMATION SecurityInformation,
+    PSID psidOwner,
+    PSID psidGroup,
+    PACL pDacl,
+    PACL pSacl);
+typedef DWORD (WINAPI *SetNamedSecurityInfoA_Proc) (
+    LPCSTR lpObjectName,
+    SE_OBJECT_TYPE ObjectType,
+    SECURITY_INFORMATION SecurityInformation,
+    PSID psidOwner,
+    PSID psidGroup,
+    PACL pDacl,
+    PACL pSacl);
 typedef BOOL (WINAPI * GetSecurityDescriptorOwner_Proc) (
     PSECURITY_DESCRIPTOR pSecurityDescriptor,
     PSID *pOwner,
@@ -807,6 +826,69 @@ set_file_security (const char *lpFileName,
       filename_to_ansi (lpFileName, filename_a);
       return (s_pfn_Set_File_SecurityA (filename_a, SecurityInformation,
 					pSecurityDescriptor));
+    }
+}
+
+static DWORD WINAPI
+set_named_security_info (LPCTSTR lpObjectName,
+			 SE_OBJECT_TYPE ObjectType,
+			 SECURITY_INFORMATION SecurityInformation,
+			 PSID psidOwner,
+			 PSID psidGroup,
+			 PACL pDacl,
+			 PACL pSacl)
+{
+  static SetNamedSecurityInfoW_Proc s_pfn_Set_Named_Security_InfoW = NULL;
+  static SetNamedSecurityInfoA_Proc s_pfn_Set_Named_Security_InfoA = NULL;
+  HMODULE hm_advapi32 = NULL;
+  if (is_windows_9x () == TRUE)
+    {
+      errno = ENOTSUP;
+      return ENOTSUP;
+    }
+  if (w32_unicode_filenames)
+    {
+      wchar_t filename_w[MAX_PATH];
+
+      if (g_b_init_set_named_security_info_w == 0)
+	{
+	  g_b_init_set_named_security_info_w = 1;
+	  hm_advapi32 = LoadLibrary ("Advapi32.dll");
+	  s_pfn_Set_Named_Security_InfoW =
+	    (SetNamedSecurityInfoW_Proc) GetProcAddress (hm_advapi32,
+							 "SetNamedSecurityInfoW");
+	}
+      if (s_pfn_Set_Named_Security_InfoW == NULL)
+	{
+	  errno = ENOTSUP;
+	  return ENOTSUP;
+	}
+      filename_to_utf16 (lpObjectName, filename_w);
+      return (s_pfn_Set_Named_Security_InfoW (filename_w, ObjectType,
+					      SecurityInformation, psidOwner,
+					      psidGroup, pDacl, pSacl));
+    }
+  else
+    {
+      char filename_a[MAX_PATH];
+
+      if (g_b_init_set_named_security_info_a == 0)
+	{
+	  g_b_init_set_named_security_info_a = 1;
+	  hm_advapi32 = LoadLibrary ("Advapi32.dll");
+	  s_pfn_Set_Named_Security_InfoA =
+	    (SetNamedSecurityInfoA_Proc) GetProcAddress (hm_advapi32, 
+							 "SetNamedSecurityInfoA");
+	}
+      if (s_pfn_Set_Named_Security_InfoA == NULL)
+	{
+	  errno = ENOTSUP;
+	  return ENOTSUP;
+	}
+      filename_to_ansi (lpObjectName, filename_a);
+      return (s_pfn_Set_Named_Security_InfoA (filename_a, ObjectType,
+					      SecurityInformation, psidOwner,
+					      psidGroup, pDacl, pSacl));
     }
 }
 
@@ -1732,9 +1814,28 @@ getloadavg (double loadavg[], int nelem)
   ULONGLONG idle, kernel, user;
   time_t now = time (NULL);
 
+  /* If system time jumped back for some reason, delete all samples
+     whose time is later than the current wall-clock time.  This
+     prevents load average figures from becoming frozen for prolonged
+     periods of time, when system time is reset backwards.  */
+  if (last_idx >= 0)
+    {
+      while (difftime (now, samples[last_idx].sample_time) < -1.0)
+	{
+	  if (last_idx == first_idx)
+	    {
+	      first_idx = last_idx = -1;
+	      break;
+	    }
+	  last_idx = buf_prev (last_idx);
+	}
+    }
+
   /* Store another sample.  We ignore samples that are less than 1 sec
      apart.  */
-  if (difftime (now, samples[last_idx].sample_time) >= 1.0 - 2*DBL_EPSILON*now)
+  if (last_idx < 0
+      || (difftime (now, samples[last_idx].sample_time)
+	  >= 1.0 - 2*DBL_EPSILON*now))
     {
       sample_system_load (&idle, &kernel, &user);
       last_idx = buf_next (last_idx);
@@ -5245,6 +5346,35 @@ utime (const char *name, struct utimbuf *times)
   return 0;
 }
 
+/* Emacs expects us to support the traditional octal form of the mode
+   bits, which is not what msvcrt.dll wants.  */
+
+#define WRITE_USER 00200
+
+int
+sys_umask (int mode)
+{
+  static int current_mask;
+  int retval, arg = 0;
+
+  /* The only bit we really support is the write bit.  Files are
+     always readable on MS-Windows, and the execute bit does not exist
+     at all.  */
+  /* FIXME: if the GROUP and OTHER bits are reset, we should use ACLs
+     to prevent access by other users on NTFS.  */
+  if ((mode & WRITE_USER) != 0)
+    arg |= S_IWRITE;
+
+  retval = _umask (arg);
+  /* Merge into the return value the bits they've set the last time,
+     which msvcrt.dll ignores and never returns.  Emacs insists on its
+     notion of mask being identical to what we return.  */
+  retval |= (current_mask & ~WRITE_USER);
+  current_mask = mode;
+
+  return retval;
+}
+
 
 /* Symlink-related functions.  */
 #ifndef SYMBOLIC_LINK_FLAG_DIRECTORY
@@ -5854,7 +5984,7 @@ acl_set_file (const char *fname, acl_type_t type, acl_t acl)
   DWORD err;
   int st = 0, retval = -1;
   SECURITY_INFORMATION flags = 0;
-  PSID psid;
+  PSID psidOwner, psidGroup;
   PACL pacl;
   BOOL dflt;
   BOOL dacl_present;
@@ -5880,11 +6010,13 @@ acl_set_file (const char *fname, acl_type_t type, acl_t acl)
   else
     fname = filename;
 
-  if (get_security_descriptor_owner ((PSECURITY_DESCRIPTOR)acl, &psid, &dflt)
-      && psid)
+  if (get_security_descriptor_owner ((PSECURITY_DESCRIPTOR)acl, &psidOwner,
+				     &dflt)
+      && psidOwner)
     flags |= OWNER_SECURITY_INFORMATION;
-  if (get_security_descriptor_group ((PSECURITY_DESCRIPTOR)acl, &psid, &dflt)
-      && psid)
+  if (get_security_descriptor_group ((PSECURITY_DESCRIPTOR)acl, &psidGroup,
+				     &dflt)
+      && psidGroup)
     flags |= GROUP_SECURITY_INFORMATION;
   if (get_security_descriptor_dacl ((PSECURITY_DESCRIPTOR)acl, &dacl_present,
 				    &pacl, &dflt)
@@ -5911,10 +6043,22 @@ acl_set_file (const char *fname, acl_type_t type, acl_t acl)
 
   e = errno;
   errno = 0;
+  /* SetFileSecurity is deprecated by MS, and sometimes fails when
+     DACL inheritance is involved, but it seems to preserve ownership
+     better than SetNamedSecurityInfo, which is important e.g., in
+     copy-file.  */
   if (!set_file_security (fname, flags, (PSECURITY_DESCRIPTOR)acl))
     {
       err = GetLastError ();
 
+      if (errno != ENOTSUP)
+	err = set_named_security_info (fname, SE_FILE_OBJECT, flags,
+				       psidOwner, psidGroup, pacl, NULL);
+    }
+  else
+    err = ERROR_SUCCESS;
+  if (err != ERROR_SUCCESS)
+    {
       if (errno == ENOTSUP)
 	;
       else if (err == ERROR_INVALID_OWNER
@@ -8583,7 +8727,7 @@ check_windows_init_file (void)
 	 need to ENCODE_FILE here, but we do need to convert the file
 	 names from UTF-8 to ANSI.  */
       init_file = build_string ("term/w32-win");
-      fd = openp (Vload_path, init_file, Fget_load_suffixes (), NULL, Qnil);
+      fd = openp (Vload_path, init_file, Fget_load_suffixes (), NULL, Qnil, 0);
       if (fd < 0)
 	{
 	  Lisp_Object load_path_print = Fprin1_to_string (Vload_path, Qnil);
@@ -8829,6 +8973,8 @@ globals_of_w32 (void)
   g_b_init_is_valid_security_descriptor = 0;
   g_b_init_set_file_security_w = 0;
   g_b_init_set_file_security_a = 0;
+  g_b_init_set_named_security_info_w = 0;
+  g_b_init_set_named_security_info_a = 0;
   g_b_init_get_adapters_info = 0;
   num_of_processors = 0;
   /* The following sets a handler for shutdown notifications for

@@ -1,7 +1,7 @@
 /* Fully extensible Emacs, running on Unix, intended for GNU.
 
-Copyright (C) 1985-1987, 1993-1995, 1997-1999, 2001-2013
-  Free Software Foundation, Inc.
+Copyright (C) 1985-1987, 1993-1995, 1997-1999, 2001-2014 Free Software
+Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -427,7 +427,7 @@ init_cmdargs (int argc, char **argv, int skip_args, char *original_pwd)
     {
       Lisp_Object found;
       int yes = openp (Vexec_path, Vinvocation_name,
-		       Vexec_suffixes, &found, make_number (X_OK));
+		       Vexec_suffixes, &found, make_number (X_OK), false);
       if (yes == 1)
 	{
 	  /* Add /: to the front of the name
@@ -1102,6 +1102,8 @@ Using an Emacs configured with --with-x-toolkit=lucid does not have this problem
 
             argv[skip_args] = fdStr;
 
+	    fcntl (daemon_pipe[0], F_SETFD, 0);
+	    fcntl (daemon_pipe[1], F_SETFD, 0);
             execvp (argv[0], argv);
 	    emacs_perror (argv[0]);
 	    exit (errno == ENOENT ? EXIT_ENOENT : EXIT_CANNOT_INVOKE);
@@ -1118,6 +1120,7 @@ Using an Emacs configured with --with-x-toolkit=lucid does not have this problem
         sscanf (dname_arg, "\n%d,%d\n%s", &(daemon_pipe[0]), &(daemon_pipe[1]),
                 dname_arg2);
         dname_arg = *dname_arg2 ? dname_arg2 : NULL;
+	fcntl (daemon_pipe[1], F_SETFD, FD_CLOEXEC);
       }
 #endif /* DAEMON_MUST_EXEC */
 
@@ -1720,7 +1723,6 @@ static const struct standard_args standard_args[] =
 #ifdef HAVE_NS
   { "-NSAutoLaunch", 0, 5, 1 },
   { "-NXAutoLaunch", 0, 5, 1 },
-  { "-disable-font-backend", "--disable-font-backend", 65, 0 },
   { "-_NSMachLaunch", 0, 85, 1 },
   { "-MachLaunch", 0, 85, 1 },
   { "-macosx", 0, 85, 0 },
