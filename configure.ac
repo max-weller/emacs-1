@@ -225,6 +225,14 @@ fi
 
 dnl _ON results in a '--without' option in the --help output, so
 dnl the help text should refer to "don't compile", etc.
+
+
+dnl EINGEFÜGT MW 2013-12-18
+OPTION_DEFAULT_ON([v8],[don't compile with v8 engine])
+
+
+
+
 OPTION_DEFAULT_ON([xpm],[don't compile with XPM image support])
 OPTION_DEFAULT_ON([jpeg],[don't compile with JPEG image support])
 OPTION_DEFAULT_ON([tiff],[don't compile with TIFF image support])
@@ -3085,6 +3093,28 @@ elif test "${HAVE_X11}" = "yes" || test "${HAVE_W32}" = "yes"; then
   fi
 fi
 AC_SUBST(LIBTIFF)
+
+
+### EINGEFÜGT MW 2013-12-18
+
+
+### Use -lv8 if available, unless `--with-v8=no'.
+HAVE_V8=no
+LIBV8=
+if test "${with_v8}" != "no"; then
+  #AC_CHECK_HEADER(v8.h, HAVE_V8=yes, HAVE_V8=no)
+
+  #if test "${HAVE_V8}" = "yes"; then
+    AC_DEFINE(HAVE_V8, 1, [Define to 1 if you have the v8 library (-lv8).])
+    LIBV8="-L${V8_DIR}/out/x64.debug -lpthread -lv8_base.x64 -lv8_snapshot -licuuc -licui18n -licudata"
+    V8_OBJ="v8_helper.o v8_adapter.o"
+  #fi
+fi
+AC_SUBST(V8_OBJ)
+AC_SUBST(LIBV8)
+
+
+
 
 ### Use -lgif or -lungif if available, unless `--with-gif=no'.
 ### mingw32 doesn't use -lgif/-lungif, since it loads the library dynamically.

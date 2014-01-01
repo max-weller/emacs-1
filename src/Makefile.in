@@ -223,6 +223,8 @@ LIBXML2_CFLAGS = @LIBXML2_CFLAGS@
 
 LIBZ = @LIBZ@
 
+LIBV8 = @LIBV8@
+
 XRANDR_LIBS = @XRANDR_LIBS@
 XRANDR_CFLAGS = @XRANDR_CFLAGS@
 
@@ -331,11 +333,14 @@ ALL_CFLAGS=-Demacs $(MYCPPFLAGS) -I. -I$(srcdir) \
   $(WARN_CFLAGS) $(WERROR_CFLAGS) $(CFLAGS)
 ALL_OBJC_CFLAGS=$(ALL_CFLAGS) $(GNU_OBJC_CFLAGS)
 
-.SUFFIXES: .m
+.SUFFIXES: .m .cpp
 .c.o:
 	@$(MKDEPDIR)
 	$(CC) -c $(CPPFLAGS) $(ALL_CFLAGS) $(PROFILING_CFLAGS) $<
 .m.o:
+	@$(MKDEPDIR)
+	$(CC) -c $(CPPFLAGS) $(ALL_OBJC_CFLAGS) $(PROFILING_CFLAGS) $<
+.cpp.o:
 	@$(MKDEPDIR)
 	$(CC) -c $(CPPFLAGS) $(ALL_OBJC_CFLAGS) $(PROFILING_CFLAGS) $<
 
@@ -386,8 +391,10 @@ PRE_ALLOC_OBJ=@PRE_ALLOC_OBJ@
 ## lastfile.o on Cygwin and MinGW, empty elsewhere.
 POST_ALLOC_OBJ=@POST_ALLOC_OBJ@
 
+V8_OBJ=@V8_OBJ@
+
 ## List of object files that make-docfile should not be told about.
-otherobj= $(TERMCAP_OBJ) $(PRE_ALLOC_OBJ) $(GMALLOC_OBJ) $(RALLOC_OBJ) \
+otherobj= $(TERMCAP_OBJ) $(V8_OBJ) $(PRE_ALLOC_OBJ) $(GMALLOC_OBJ) $(RALLOC_OBJ) \
   $(POST_ALLOC_OBJ) $(WIDGET_OBJ) $(LIBOBJS)
 
 ## All object files linked into temacs.  $(VMLIMIT_OBJ) should be first.
@@ -409,7 +416,7 @@ LIBES = $(LIBS) $(W32_LIBS) $(LIBS_GNUSTEP) $(LIBX_BASE) $(LIBIMAGE) \
    $(LIBS_TERMCAP) $(GETLOADAVG_LIBS) $(SETTINGS_LIBS) $(LIBSELINUX_LIBS) \
    $(FREETYPE_LIBS) $(FONTCONFIG_LIBS) $(LIBOTF_LIBS) $(M17N_FLT_LIBS) \
    $(LIBGNUTLS_LIBS) $(LIB_PTHREAD) $(LIB_PTHREAD_SIGMASK) \
-   $(GFILENOTIFY_LIBS) $(LIB_MATH) $(LIBZ)
+   $(GFILENOTIFY_LIBS) $(LIB_MATH) $(LIBZ) $(LIBV8)
 
 all: emacs$(EXEEXT) $(OTHER_FILES)
 .PHONY: all
@@ -488,7 +495,7 @@ $(lib)/libgnu.a: $(config_h)
 ## to start if Vinstallation_directory has the wrong value.
 temacs$(EXEEXT): $(LIBXMENU) $(ALLOBJS) \
 	         $(lib)/libgnu.a $(EMACSRES)
-	$(CC) $(ALL_CFLAGS) $(TEMACS_LDFLAGS) $(LDFLAGS) \
+	g++ $(ALL_CFLAGS) $(TEMACS_LDFLAGS) $(LDFLAGS) \
 	  -o temacs $(ALLOBJS) $(lib)/libgnu.a $(W32_RES_LINK) $(LIBES)
 	$(MKDIR_P) $(etc)
 	$(TEMACS_POST_LINK)

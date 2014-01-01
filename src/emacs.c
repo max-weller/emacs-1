@@ -105,6 +105,9 @@ extern void moncontrol (int mode);
 #include <sys/personality.h>
 #endif
 
+#include "v8_adapter.h"
+
+
 static const char emacs_version[] = VERSION;
 static const char emacs_copyright[] = COPYRIGHT;
 
@@ -1515,6 +1518,9 @@ Using an Emacs configured with --with-x-toolkit=lucid does not have this problem
 
       syms_of_profiler ();
 
+
+      //syms_of_v8();
+
       keys_of_casefiddle ();
       keys_of_cmds ();
       keys_of_buffer ();
@@ -1576,7 +1582,7 @@ Using an Emacs configured with --with-x-toolkit=lucid does not have this problem
 	Vtop_level = list2 (intern_c_string ("load"),
 			    build_string ("loadup.el"));
     }
-
+  
   if (initialized)
     {
 #ifdef HAVE_TZSET

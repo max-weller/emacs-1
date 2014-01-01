@@ -99,7 +99,10 @@ typedef unsigned char bits_word;
 # define BITS_WORD_MAX ((1u << BOOL_VECTOR_BITS_PER_CHAR) - 1)
 enum { BITS_PER_BITS_WORD = BOOL_VECTOR_BITS_PER_CHAR };
 #endif
+
+#ifndef _INCLUDED_FROM_V8_HELPER
 verify (BITS_WORD_MAX >> (BITS_PER_BITS_WORD - 1) == 1);
+#endif
 
 /* Number of bits in some machine integer types.  */
 enum
@@ -694,7 +697,7 @@ INLINE enum Lisp_Type
 XTYPE (Lisp_Object a)
 {
   EMACS_UINT i = XLI (a);
-  return USE_LSB_TAG ? i & ~VALMASK : i >> VALBITS;
+  return (enum Lisp_Type) (USE_LSB_TAG ? i & ~VALMASK : i >> VALBITS);
 }
 
 /* Extract A's pointer value, assuming A's type is TYPE.  */
@@ -820,14 +823,14 @@ INLINE struct Lisp_Vector *
 XVECTOR (Lisp_Object a)
 {
   eassert (VECTORLIKEP (a));
-  return XUNTAG (a, Lisp_Vectorlike);
+  return ((struct Lisp_Vector*) XUNTAG (a, Lisp_Vectorlike));
 }
 
 INLINE struct Lisp_String *
 XSTRING (Lisp_Object a)
 {
   eassert (STRINGP (a));
-  return XUNTAG (a, Lisp_String);
+  return ((struct Lisp_String *) XUNTAG (a, Lisp_String));
 }
 
 LISP_MACRO_DEFUN (XSYMBOL, struct Lisp_Symbol *, (Lisp_Object a), (a))
@@ -836,7 +839,7 @@ INLINE struct Lisp_Float *
 XFLOAT (Lisp_Object a)
 {
   eassert (FLOATP (a));
-  return XUNTAG (a, Lisp_Float);
+  return ((struct Lisp_Float *) XUNTAG (a, Lisp_Float));
 }
 
 /* Pseudovector types.  */
@@ -845,55 +848,55 @@ INLINE struct Lisp_Process *
 XPROCESS (Lisp_Object a)
 {
   eassert (PROCESSP (a));
-  return XUNTAG (a, Lisp_Vectorlike);
+  return ((struct Lisp_Process *) XUNTAG (a, Lisp_Vectorlike));
 }
 
 INLINE struct window *
 XWINDOW (Lisp_Object a)
 {
   eassert (WINDOWP (a));
-  return XUNTAG (a, Lisp_Vectorlike);
+  return ((struct window *) XUNTAG (a, Lisp_Vectorlike));
 }
 
 INLINE struct terminal *
 XTERMINAL (Lisp_Object a)
 {
-  return XUNTAG (a, Lisp_Vectorlike);
+  return (struct terminal *) XUNTAG (a, Lisp_Vectorlike);
 }
 
 INLINE struct Lisp_Subr *
 XSUBR (Lisp_Object a)
 {
   eassert (SUBRP (a));
-  return XUNTAG (a, Lisp_Vectorlike);
+  return ((struct Lisp_Subr *) XUNTAG (a, Lisp_Vectorlike));
 }
 
 INLINE struct buffer *
 XBUFFER (Lisp_Object a)
 {
   eassert (BUFFERP (a));
-  return XUNTAG (a, Lisp_Vectorlike);
+  return ((struct buffer *) XUNTAG (a, Lisp_Vectorlike));
 }
 
 INLINE struct Lisp_Char_Table *
 XCHAR_TABLE (Lisp_Object a)
 {
   eassert (CHAR_TABLE_P (a));
-  return XUNTAG (a, Lisp_Vectorlike);
+  return ((struct Lisp_Char_Table *) XUNTAG (a, Lisp_Vectorlike));
 }
 
 INLINE struct Lisp_Sub_Char_Table *
 XSUB_CHAR_TABLE (Lisp_Object a)
 {
   eassert (SUB_CHAR_TABLE_P (a));
-  return XUNTAG (a, Lisp_Vectorlike);
+  return ((struct Lisp_Sub_Char_Table *) XUNTAG (a, Lisp_Vectorlike));
 }
 
 INLINE struct Lisp_Bool_Vector *
 XBOOL_VECTOR (Lisp_Object a)
 {
   eassert (BOOL_VECTOR_P (a));
-  return XUNTAG (a, Lisp_Vectorlike);
+  return ((struct Lisp_Bool_Vector *) XUNTAG (a, Lisp_Vectorlike));
 }
 
 /* Construct a Lisp_Object from a value or address.  */
@@ -1121,9 +1124,9 @@ SREF (Lisp_Object string, ptrdiff_t index)
   return SDATA (string)[index];
 }
 INLINE void
-SSET (Lisp_Object string, ptrdiff_t index, unsigned char new)
+SSET (Lisp_Object string, ptrdiff_t index, unsigned char new_char)
 {
-  SDATA (string)[index] = new;
+  SDATA (string)[index] = new_char;
 }
 INLINE ptrdiff_t
 SCHARS (Lisp_Object string)
@@ -1155,10 +1158,10 @@ STRING_SET_CHARS (Lisp_Object string, ptrdiff_t newsize)
   XSTRING (string)->size = newsize;
 }
 INLINE void
-STRING_COPYIN (Lisp_Object string, ptrdiff_t index, char const *new,
+STRING_COPYIN (Lisp_Object string, ptrdiff_t index, char const *new_string,
 	       ptrdiff_t count)
 {
-  memcpy (SDATA (string) + index, new, count);
+  memcpy (SDATA (string) + index, new_string, count);
 }
 
 /* Header of vector-like objects.  This documents the layout constraints on
@@ -1200,12 +1203,14 @@ struct Lisp_Vector
     Lisp_Object contents[FLEXIBLE_ARRAY_MEMBER];
   };
 
+#ifndef _INCLUDED_FROM_V8_HELPER
 /* C11 prohibits alignof (struct Lisp_Vector), so compute it manually.  */
 enum
   {
     ALIGNOF_STRUCT_LISP_VECTOR
       = alignof (union { struct vectorlike_header a; Lisp_Object b; })
   };
+#endif
 
 /* A boolvector is a kind of vectorlike, with contents like a string.  */
 
@@ -1745,7 +1750,7 @@ struct Lisp_Hash_Table
 INLINE struct Lisp_Hash_Table *
 XHASH_TABLE (Lisp_Object a)
 {
-  return XUNTAG (a, Lisp_Vectorlike);
+  return ((struct Lisp_Hash_Table*) (XUNTAG (a, Lisp_Vectorlike)));
 }
 
 #define XSET_HASH_TABLE(VAR, PTR) \
@@ -2072,7 +2077,7 @@ union Lisp_Misc
 INLINE union Lisp_Misc *
 XMISC (Lisp_Object a)
 {
-  return XUNTAG (a, Lisp_Misc);
+  return (union Lisp_Misc *) XUNTAG (a, Lisp_Misc);
 }
 
 INLINE struct Lisp_Misc_Any *
@@ -2382,7 +2387,7 @@ PSEUDOVECTORP (Lisp_Object a, int code)
   else
     {
       /* Converting to struct vectorlike_header * avoids aliasing issues.  */
-      struct vectorlike_header *h = XUNTAG (a, Lisp_Vectorlike);
+      struct vectorlike_header *h = (struct vectorlike_header *) XUNTAG (a, Lisp_Vectorlike);
       return PSEUDOVECTOR_TYPEP (h, code);
     }
 }
